@@ -1,5 +1,9 @@
 # iLO 2.80 Patch (signature-bypass only)
 
+**Hardware-confirmed working on a real HP DL380 Gen9, 2026-11-05.** Boots
+normally, iLO reports its correct version, SSH/web access normal. This is
+the first version beyond 2.77 confirmed on real hardware.
+
 This patch ONLY patches the bootloader/kernel/userland signature checks
 (identical mechanism to 2.77-2.79), allowing custom/unsigned firmware to be
 flashed and basic SSH access confirmed.

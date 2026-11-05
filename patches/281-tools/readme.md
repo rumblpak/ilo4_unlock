@@ -13,4 +13,4 @@ helper commands reference a fixed address outside this firmware's own
 userland image (true for 2.77 too) and could not be statically verified
 either way; the core read/write/execute path does not depend on them.
 
-**Not yet hardware-tested.**
+**Not yet hardware-tested. NOTE: the identical technique failed on real 2.80 hardware (patches/280-tools) -- do not flash this until that is understood, see research/2026-11-05-278-282-feasibility.md.**
