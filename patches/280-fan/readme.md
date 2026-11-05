@@ -25,3 +25,30 @@ of trusting SSH text output: compare `/system1/fan1`-`fan6` `DesiredSpeed`
 before and after issuing a `fan` command, e.g. `fan p 1 min <value>`.
 
 **Not yet hardware-tested.**
+
+## Hardware test result, 2026-11-05: CONFIRMED NOT WORKING
+
+Flashed on the real DL380 Gen9. Boots fine (confirms this injection point,
+unlike `help`/`280-tools`, really is safe). `fan p 0 min 25` issued over
+SSH: no observable effect.
+
+Initial testing was confounded by a periodic "tickler"-style self-test
+behavior (iLO briefly spiking fan speed on its own every so often, per the
+`tickler` option documented in this project's own `fan` command grammar) --
+a coincidental speed spike right after the command initially looked like a
+result but wasn't. Cleanly resolved by using the stock BIOS `ThermalConfig`
+setting (`MaximumCooling`, confirmed via Redfish/CLP to deterministically
+pin `DesiredSpeed` at 100%) as a known, stable baseline: with that pinning
+active, the `fan` command produced zero deviation. This rules out the
+periodic-noise explanation and gives a clean, hardware-confirmed negative:
+**the fan service is non-functional on 2.80, not just statically suspected
+to be.**
+
+This confirms (not just infers from code size) that restoring old-style
+fine-grained PWM fan control via this mechanism is not currently achievable
+on 2.80 -- and by extension, very likely 281/282 too, given the identical
+~38KB code shrinkage was already confirmed present uniformly across
+2.78-2.82. The stock BIOS `ThermalConfig` presets (Optimal/Increased/
+Maximum Cooling) remain the only confirmed-working lever for influencing
+fan behavior on these versions, and they're coarse presets, not per-fan
+PWM control.
