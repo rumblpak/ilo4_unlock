@@ -93,6 +93,63 @@ Health's `TaskInfo`/`.secinfo` metadata in a way sensitive to array growth
 from 63 to 64 entries, etc.), and it does not change the standing,
 separately-acknowledged risk around HPESBHF04134 (see `patches/280-fan-restore/readme.md`).
 
+## Additional pre-flight checks added after an adversarial review, 2026-11-06
+
+`build_patched_280.py` originally trusted `NEW_SECINFO_INDEX=577` and
+`SIZE_INITIAL=49` as bare constants from a one-off manual scan, and trusted
+`NEW_PHYS_BASE`/`NEW_TASK_LOCAL_BASE`'s collision-freedom from the
+postmortem's one-off summary claims rather than re-checking the live binary
+-- exactly the class of mistake that bricked v1. After three consecutive
+hardware round-trips (`280-tools`, `280-fan`, this patch's own v1) each
+surfaced something static checks hadn't caught, and given each hardware test
+costs ~20 minutes against instant static checks, the build script now
+self-verifies, against the actual input binary, every time it runs:
+
+- **`NEW_SECINFO_INDEX`/`SIZE_INITIAL`**: re-derived by walking the live
+  `.secinfo` linked list from its head (bounds-checked against the section's
+  own extent at every step -- `struct.unpack_from` silently wraps on a
+  negative offset instead of raising, so an un-bounds-checked walk would NOT
+  reliably fail loudly on a wrong assumption) and cross-checked against a
+  direct scan of the 63 existing Health `VirtRange` entries for the one
+  whose `rsize` matches `.health.elf.data`'s hardware-confirmed `0x91000`
+  (see "Why v1 failed" above), rather than trusting `patches/280-fan-restore`
+  v1's unverified `mod_id=0x82` comment on its own.
+- **`NEW_PHYS_BASE` collision-freedom**: the same `.secinfo` walk now also
+  tracks the highest `text_base_addr+text_size` across all existing entries
+  and asserts the new physical placement is above it -- re-run against the
+  live binary every build, not trusted as a one-off "exhaustive scan"
+  result from `research/2026-11-06-fan-restore-v2-postmortem.md` that can no
+  longer be independently reproduced (the script that did it wasn't
+  committed).
+- **`NEW_TASK_LOCAL_BASE` collision-freedom**: checked against each of the
+  63 existing Health `VirtRange` entries' own `[rbase, rbase+rsize)` ranges
+  individually, not just the "existing entries top out at `0x2000000`"
+  summary claim (a max-value summary wouldn't by itself rule out a smaller,
+  out-of-order existing entry overlapping the new one).
+- **The callsite `bl` itself, decoded and round-tripped**: this patch's own
+  `encode_branch` tooling silently wraps a too-large 24-bit immediate
+  instead of raising, so the only real test is to decode the actual patched
+  bytes and independently compute where they branch to. The script now
+  resolves the callsite's own task-local address from scratch (finds its
+  owning `.secinfo` entry by true-vaddr range, predicts that entry's
+  `mod_id` using the same `SIZE_INITIAL + secinfo_index` formula relied on
+  for the new entry, and confirms a real Health `VirtRange` entry has that
+  `mod_id`), decodes `NEW_BL_BYTES` as an ARM32 `B`/`BL` instruction, and
+  asserts the computed target equals `NEW_TASK_LOCAL_BASE` exactly. Decoding
+  `NEW_BL_BYTES` against this readme's own previously-approximate `~0x2604c`
+  callsite value independently lands on exactly `0x2001000` with zero
+  discrepancy -- the "~" was just prose hedging, not real imprecision.
+
+All of the above were exercised against synthetic (non-firmware) data
+covering both the intended-good path and deliberately corrupted inputs
+(a `next_ptr` pointing before/after the section, duplicate matches, a
+mod_id formula that doesn't generalize, forward/backward branch encoding)
+before being relied on here, since no real extracted `elf.bin` exists in
+this repo to test against end-to-end. These checks make a wrong assumption
+**fail loudly during the build** instead of **silently producing a
+wrong-but-plausible image** -- they raise confidence, they do not replace a
+hardware test.
+
 ## Build
 
 `build_patched_280.py` in this directory is self-contained: given a freshly

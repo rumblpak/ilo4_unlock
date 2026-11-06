@@ -73,8 +73,95 @@ assert len(existing_vr_bytes) == 63*0x20
 LAST_SECINFO_NEXTPTR_FOFF = 0x16ece54
 last_next_ptr = struct.unpack_from('<I', data, LAST_SECINFO_NEXTPTR_FOFF)[0]
 assert last_next_ptr == 0, hex(last_next_ptr)
-NEW_SECINFO_INDEX = 577  # confirmed count of existing secinfo entries
-SIZE_INITIAL = 49
+
+# ---------------------------------------------------------------------------
+# 1a. NEW_SECINFO_INDEX and SIZE_INITIAL below used to be bare constants
+#     trusted from an earlier one-off manual scan -- exactly the class of
+#     unverified assumption that bricked v1 (see
+#     research/2026-11-06-fan-restore-v2-postmortem.md). Both are now
+#     independently re-derived from the live binary and cross-checked two
+#     different ways, instead of only being documented in a comment. If this
+#     script is ever re-run against a different 2.80 extraction, a mismatch
+#     here raises loudly instead of silently computing a wrong mod_id.
+# ---------------------------------------------------------------------------
+hdata_shdr = shdrs[next(i for i in range(e_shnum) if name_of(i) == '.health.elf.data')]
+
+# Walk the live `.secinfo` linked list from its head, bounds-checking every
+# step against the section's own declared extent. A naive walk that only
+# trusts struct.unpack_from to raise on a bad offset is NOT sufficient:
+# struct.unpack_from silently treats a *negative* offset as "count from the
+# end of the buffer" rather than raising (verified interactively against
+# Python's actual behavior, not assumed) -- so if next_ptr/sh_addr were ever
+# misread, the walk could silently wander into unrelated file content
+# instead of failing loudly, which defeats the entire point of this check.
+SECINFO_ENTRY_SIZE = 24
+secinfo_lo = secinfo['sh_offset']
+secinfo_hi = secinfo['sh_offset'] + secinfo['sh_size']
+walk_off = secinfo_lo
+hdata_secinfo_index = None
+max_existing_secinfo_end = 0  # highest (text_base_addr + text_size) seen -- re-derives, from the
+                               # live binary, the "nothing else uses physical addresses up here"
+                               # claim NEW_PHYS_BASE's placement depends on, instead of trusting the
+                               # postmortem's one-off "0x3e22b18" scan result.
+index = 0
+while True:
+    assert index < 10000, "`.secinfo` linked-list walk did not terminate -- unexpected list structure"
+    assert secinfo_lo <= walk_off <= secinfo_hi - SECINFO_ENTRY_SIZE, \
+        ("`.secinfo` walk stepped outside the section's own bounds", hex(walk_off), hex(secinfo_lo), hex(secinfo_hi))
+    next_ptr, name_ptr, text_base_addr, text_size, dw1, dw2 = struct.unpack_from('<IIIIII', data, walk_off)
+    if text_base_addr == hdata_shdr['sh_addr']:
+        assert hdata_secinfo_index is None, \
+            ("multiple `.secinfo` entries share .health.elf.data's sh_addr -- ambiguous match", hdata_secinfo_index, index)
+        hdata_secinfo_index = index
+    max_existing_secinfo_end = max(max_existing_secinfo_end, text_base_addr + text_size)
+    if next_ptr == 0:
+        break
+    walk_off = secinfo_lo + (next_ptr - secinfo['sh_addr'])
+    index += 1
+total_existing_secinfo_entries = index + 1
+print(f".secinfo linked-list walk: {total_existing_secinfo_entries} entries, tail next_ptr field @0x{walk_off:x}, "
+      f".health.elf.data found at index {hdata_secinfo_index}, highest existing "
+      f"(text_base_addr+text_size)=0x{max_existing_secinfo_end:x}")
+
+NEW_SECINFO_INDEX = 577  # the new entry's own eventual index == count of existing entries
+assert total_existing_secinfo_entries == NEW_SECINFO_INDEX, \
+    ("`.secinfo` entry count disagrees with NEW_SECINFO_INDEX", total_existing_secinfo_entries, NEW_SECINFO_INDEX)
+assert walk_off == LAST_SECINFO_NEXTPTR_FOFF, \
+    ("walked to a different tail entry than LAST_SECINFO_NEXTPTR_FOFF points at", hex(walk_off), hex(LAST_SECINFO_NEXTPTR_FOFF))
+assert hdata_secinfo_index is not None, "never found .health.elf.data's SectionInfo entry while walking .secinfo"
+
+# Cross-check SIZE_INITIAL two independent ways rather than trusting either
+# alone:
+#   (a) scan the 63 EXISTING Health VirtRange entries (already loaded as
+#       existing_vr_bytes) for the one whose reservation size matches
+#       .health.elf.data's hardware-confirmed rsize=0x91000 -- the exact
+#       value whose misinterpretation bricked v1 (see this patch's readme,
+#       "Why v1 failed") -- and read ITS mod_id field directly from the
+#       binary, instead of trusting any human-recorded value for it.
+#   (b) patches/280-fan-restore/build_patched_280.py's fixup comment
+#       separately states this same entry's mod_id is 0x82 -- that was never
+#       actually read by that script's own code, so on its own it is just a
+#       claim, but it must still agree with (a).
+VR_ENTRY_SIZE = 0x20
+HDATA_KNOWN_RSIZE = 0x91000
+hdata_vr_mod_id = None
+for vr_i in range(63):
+    vr_dw1, vr_dw2, vr_rbase, vr_rsize, vr_mod_id, vr_dw6, vr_dw7, vr_dw8 = \
+        struct.unpack_from('<IIIIIIII', existing_vr_bytes, vr_i * VR_ENTRY_SIZE)
+    if vr_rsize == HDATA_KNOWN_RSIZE:
+        assert hdata_vr_mod_id is None, \
+            ("multiple existing Health VirtRange entries share rsize=0x91000", hdata_vr_mod_id, vr_mod_id)
+        hdata_vr_mod_id = vr_mod_id
+assert hdata_vr_mod_id is not None, \
+    "no existing Health VirtRange entry has .health.elf.data's documented rsize=0x91000"
+
+HDATA_KNOWN_MOD_ID = 0x82  # from patches/280-fan-restore/build_patched_280.py's fixup comment (unverified by that script itself)
+assert hdata_vr_mod_id == HDATA_KNOWN_MOD_ID, \
+    ("VirtRange-derived mod_id disagrees with v1's recorded value", hex(hdata_vr_mod_id), hex(HDATA_KNOWN_MOD_ID))
+
+SIZE_INITIAL = hdata_vr_mod_id - hdata_secinfo_index
+assert SIZE_INITIAL == 49, \
+    ("derived SIZE_INITIAL disagrees with the previously-documented value", SIZE_INITIAL, hdata_vr_mod_id, hdata_secinfo_index)
 
 # ---------------------------------------------------------------------------
 # 2. build the new combined section content: fan code + new SectionInfo
@@ -87,7 +174,26 @@ SIZE_INITIAL = 49
 #    that module's live BSS. See research/ for the post-mortem.
 # ---------------------------------------------------------------------------
 NEW_PHYS_BASE = 0x4000000
+assert NEW_PHYS_BASE >= max_existing_secinfo_end, \
+    ("NEW_PHYS_BASE collides with or precedes the highest physical address already claimed by an "
+     "existing `.secinfo` entry -- re-derived above by walking the LIVE `.secinfo` list, not trusted "
+     "from the postmortem's one-off scan result", hex(NEW_PHYS_BASE), hex(max_existing_secinfo_end))
+
 NEW_TASK_LOCAL_BASE = 0x2001000  # Health task-local; existing entries top out at 0x2000000
+NEW_TASK_LOCAL_SIZE = 0x4000
+
+# Re-check task-local collision-freedom against all 63 EXISTING Health
+# VirtRange entries individually, not just the "existing entries top out at
+# 0x2000000" summary claim above -- a summary of the max doesn't rule out a
+# smaller, oddly-placed existing entry overlapping this new one if the
+# existing entries aren't actually laid out in strictly increasing order.
+for vr_i in range(63):
+    _d1, _d2, vr_rbase, vr_rsize, _mid, _d6, _d7, _d8 = \
+        struct.unpack_from('<IIIIIIII', existing_vr_bytes, vr_i * VR_ENTRY_SIZE)
+    overlaps = vr_rbase < NEW_TASK_LOCAL_BASE + NEW_TASK_LOCAL_SIZE and NEW_TASK_LOCAL_BASE < vr_rbase + vr_rsize
+    assert not overlaps, \
+        ("NEW_TASK_LOCAL_BASE's reservation overlaps an EXISTING Health VirtRange entry",
+         vr_i, hex(vr_rbase), hex(vr_rsize), hex(NEW_TASK_LOCAL_BASE), hex(NEW_TASK_LOCAL_SIZE))
 
 fan_block = open(FAN_BLOCK_PATH, 'rb').read()
 assert len(fan_block) == 15548
@@ -102,7 +208,7 @@ new_secinfo_struct += b'\x00' * pad1
 
 virtrange_array_vaddr = secinfo_struct_vaddr + len(new_secinfo_struct)
 new_health_mod_id = SIZE_INITIAL + NEW_SECINFO_INDEX
-new_vr_entry = struct.pack('<IIIIIIII', 1, 5, NEW_TASK_LOCAL_BASE, 0x4000, new_health_mod_id, 0, 0, 0)
+new_vr_entry = struct.pack('<IIIIIIII', 1, 5, NEW_TASK_LOCAL_BASE, NEW_TASK_LOCAL_SIZE, new_health_mod_id, 0, 0, 0)
 new_vr_array = existing_vr_bytes + new_vr_entry
 assert len(new_vr_array) == 64*0x20
 
@@ -124,6 +230,62 @@ NEW_BL_BYTES = bytes.fromhex('eb6b7feb')
 old_bl = bytes(data[CALLSITE_FOFF:CALLSITE_FOFF+4])
 assert old_bl == bytes.fromhex('1e4900eb'), old_bl.hex()
 assert CALLSITE_FOFF < boottable['sh_offset']  # unaffected by the append-at-end insertion
+
+# ---------------------------------------------------------------------------
+# 3a. Round-trip-verify the single most safety-critical patched instruction:
+#     the callsite `bl` that actually invokes the restored handler. Per this
+#     patch's readme, `encode_branch` silently wraps the 24-bit immediate on
+#     overflow instead of raising, so a wrong encoding would NOT have been
+#     caught by a "zero unresolved targets" check that only verifies
+#     resolve_target() doesn't throw -- the only way to actually catch that
+#     failure class is to decode the real bytes and independently compute
+#     where they branch to, not trust what the script intends.
+#
+#     An earlier version of this check resolved the callsite's task-local
+#     address via the mod_id/`.secinfo` VirtRange chain used for the NEW
+#     entry elsewhere in this script. Run against the real firmware, that
+#     chain failed (no existing VirtRange entry had the predicted mod_id).
+#     Investigation found two compounding bugs in the check itself, not in
+#     the patch: (1) the callsite-section lookup didn't exclude SHT_NOBITS
+#     sections, so it matched `.embmedia.heap` (a zero-content BSS
+#     placeholder sharing `.health.elf.text`'s sh_offset) instead of the real
+#     code section -- the same NOBITS exclusion the pre-existing `maxend`
+#     check elsewhere in this script already applies, just not replicated
+#     here; (2) the mod_id/VirtRange mechanism is for ADDITIONAL,
+#     dynamically-mapped modules (like `.health.elf.data`'s BSS extension),
+#     not for a task's own primary, directly-loaded code section -- which
+#     instead uses the much simpler convention already documented in
+#     `research/2022-02-17-docs.md` for `.ConAppCLI.elf.text`:
+#     `task_local = true_vaddr - section_sh_addr + 0x10000`. Applying that
+#     correct convention here, using the real section header, reproduces the
+#     readme's "~0x2604c" value EXACTLY (zero discrepancy) against the real
+#     extracted 2.80 firmware.
+# ---------------------------------------------------------------------------
+health_text_shdr = shdrs[next(i for i in range(e_shnum) if name_of(i) == '.health.elf.text')]
+callsite_shdr = next(s for s in shdrs
+                      if s['sh_type'] != 8  # exclude SHT_NOBITS placeholders (see maxend, above)
+                      and s['sh_offset'] <= CALLSITE_FOFF < s['sh_offset'] + s['sh_size'])
+assert callsite_shdr is health_text_shdr, \
+    ("the callsite is not inside `.health.elf.text` as expected -- the task-local conversion below "
+     "assumes it is", name_of(shdrs.index(callsite_shdr)))
+callsite_true_vaddr = callsite_shdr['sh_addr'] + (CALLSITE_FOFF - callsite_shdr['sh_offset'])
+callsite_task_local = callsite_true_vaddr - health_text_shdr['sh_addr'] + 0x10000
+print(f"callsite: file_off=0x{CALLSITE_FOFF:x} true_vaddr=0x{callsite_true_vaddr:x} "
+      f"task_local=0x{callsite_task_local:x} (readme's approximate value: ~0x2604c)")
+
+# Decode NEW_BL_BYTES as an ARM32 B/BL instruction and independently compute
+# its real target.
+bl_word = struct.unpack('<I', NEW_BL_BYTES)[0]
+assert (bl_word >> 25) & 0b111 == 0b101, ("NEW_BL_BYTES is not a B/BL-family instruction", hex(bl_word))
+imm24 = bl_word & 0xFFFFFF
+if imm24 & 0x800000:
+    imm24 -= 0x1000000  # sign-extend the 24-bit field
+decoded_target_task_local = (callsite_task_local + 8 + imm24 * 4) & 0xFFFFFFFF
+print(f"decoded branch target (task-local): 0x{decoded_target_task_local:x} (intended: 0x{NEW_TASK_LOCAL_BASE:x})")
+assert decoded_target_task_local == NEW_TASK_LOCAL_BASE, \
+    ("callsite `bl` does NOT decode to the intended handler address -- this is exactly the silent "
+     "encode_branch wraparound failure class the readme warns about",
+     hex(decoded_target_task_local), hex(NEW_TASK_LOCAL_BASE))
 
 # ---------------------------------------------------------------------------
 # 4. perform the single insertion: append the new section's content right
