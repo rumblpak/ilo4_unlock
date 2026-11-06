@@ -21,7 +21,14 @@ Apply in this order:
    - offset `0x3ce8`: a new 64-entry Health `VirtRange` array (2048 bytes)
      -- the existing 63 entries verbatim, plus one new entry
      `{dw1=1, dw2=5, rbase=0x2001000, rsize=0x4000, mod_id=0x272, dw6=dw7=dw8=0}`.
-     `mod_id = size_initial(49) + new_secinfo_index(577) = 626 = 0x272`.
+     `mod_id = size_initial(49) + new_secinfo_index(577) = 626 = 0x272`. Both
+     `size_initial` and `new_secinfo_index` were originally trusted as
+     one-off manually-confirmed constants; `build_patched_280.py` now
+     independently re-derives and asserts both at build time by walking the
+     live `.secinfo` linked list (counting its length, and cross-referencing
+     `.health.elf.data`'s known `mod_id=0x82` from
+     `patches/280-fan-restore/build_patched_280.py`), so a bad assumption
+     here raises instead of silently computing a wrong `mod_id`.
 
 3. **`.secinfo` linked-list splice**: the file offset `0x16ece54` is the
    `next_ptr` field of the *previous* tail `SectionInfo` entry (index 576,
