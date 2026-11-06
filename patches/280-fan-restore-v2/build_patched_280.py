@@ -182,6 +182,29 @@ assert NEW_PHYS_BASE >= max_existing_secinfo_end, \
 NEW_TASK_LOCAL_BASE = 0x2001000  # Health task-local; existing entries top out at 0x2000000
 NEW_TASK_LOCAL_SIZE = 0x4000
 
+# 0x2000000 is NOT just "the highest address anything currently uses" -- see
+# research/2026-11-06-kernel-re-methodology-and-pitfalls.md. This firmware
+# runs Green Hills INTEGRITY RTOS, confirmed by strings in this exact image
+# (`AddressSpace`, `INTEGRITY`) and independently corroborated by public
+# research on this exact firmware (Perigaud/Gazet/Czarny, REcon 2018):
+# INTEGRITY gives every userland task a fixed-size virtual Address Space,
+# sized at system-build time, not grown dynamically. Every one of the 31
+# userland tasks in this exact 2.80 image (and all 32 in 2.77) independently
+# ends its own VirtRange table at exactly 0x2000000 despite wildly differing
+# module counts (54-72 entries) -- strong evidence this is a hard, universal
+# per-task ceiling, not headroom. `NEW_TASK_LOCAL_BASE` placed this v2
+# attempt ONE ENTRY PAST that ceiling, which is the leading (still not
+# 100%-confirmed-by-kernel-code) explanation for why v2 bricked hardware the
+# same way v1 did. This assertion makes that specific mistake impossible to
+# repeat silently.
+assert NEW_TASK_LOCAL_BASE + NEW_TASK_LOCAL_SIZE <= 0x2000000, \
+    ("NEW_TASK_LOCAL_BASE+NEW_TASK_LOCAL_SIZE exceeds the per-task Address "
+     "Space ceiling that EVERY task in this firmware (both 2.77 and 2.80) "
+     "independently respects -- this is believed to be a hard INTEGRITY RTOS "
+     "limit, not free space. See research/2026-11-06-kernel-re-methodology-"
+     "and-pitfalls.md before overriding this.",
+     hex(NEW_TASK_LOCAL_BASE), hex(NEW_TASK_LOCAL_SIZE))
+
 # Re-check task-local collision-freedom against all 63 EXISTING Health
 # VirtRange entries individually, not just the "existing entries top out at
 # 0x2000000" summary claim above -- a summary of the max doesn't rule out a
