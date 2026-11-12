@@ -10,21 +10,34 @@ revisited.
 
 ## Actionable: still worth doing
 
-1. **`patches/277-tools` has never been hardware-tested, and this
-   project's own research already recommended testing it before touching
-   280/281/282-tools again.** From
-   `research/2026-11-05-278-282-feasibility.md`: *"there is no documented
-   hardware-test confirmation of `patches/277-tools` anywhere in this
-   repo... Test `patches/277-tools` on this same DL380 Gen9 with genuine
-   2.77 firmware before touching 280/281/282-tools again."* This is the
-   single cleanest, lowest-new-risk step toward resolving the still-open
-   `patches/280-tools` brick (separate from, and never explained by, the
-   now-closed VirtRange investigation): if 277-tools *also* bricks genuine
-   2.77, the "overwrite `help`" technique is unsound in general, version-
-   independent. If it works, the defect is specific to the 2.80+ port and
-   worth chasing further. Nobody ran this test. It uses firmware this
-   project already has and a technique already built -- no new patch
-   development needed.
+1. ~~`patches/277-tools` has never been hardware-tested~~ -- **revised
+   after checking upstream provenance, 2026-11-12.** This repo is a fork
+   of `kendallgoto/ilo4_unlock`. Confirmed every file in this fork's
+   `patches/277-tools/` (`tools.S`, all three patch JSONs, `config`,
+   `readme.md`) is byte-for-byte identical to the upstream copy -- no
+   divergence. The upstream maintainer's own merged PR
+   (`kendallgoto/ilo4_unlock#2`, merged 2022-03-08) describes the feature
+   in confident, present-tense functional language: *"these tools allow
+   for reading and modifying the iLO's memory while it is running... This
+   also features a python REPL to interact directly with the iLO and
+   inject & execute firmware on a running system."* This is strong,
+   though not 100% explicit (no dedicated "I flashed this and it booted"
+   research note or issue comment exists in either repo), evidence the
+   base `help`-hijack/memory-probe technique is sound on 2.77 -- it is a
+   real, working, maintained feature in the upstream project, not
+   speculative code this project invented.
+
+   **Revised conclusion:** flashing `277-tools` to independently
+   re-confirm the base technique is very likely low-information-gain and
+   not worth the flash-brick risk. More importantly, this narrows the
+   still-open `patches/280-tools` mystery: it's now unlikely to be "the
+   technique is broken in general" (good upstream evidence against) *and*
+   it was already shown not to be "the 5 re-derived literal addresses are
+   wrong for 2.80" (`research/2026-11-05-278-282-feasibility.md` --
+   verified byte-identical function prologues across all six versions).
+   Something else, specific to the 2.80 port or environment, remains
+   genuinely unidentified. Chasing it further would need to look beyond
+   both of those two already-substantially-ruled-out explanations.
 
 2. **Existing, stock, read-only telemetry surfaces were never checked for
    live memory exposure**, independent of the broken `280-tools` memory
