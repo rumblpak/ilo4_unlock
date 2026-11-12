@@ -83,6 +83,20 @@ density, not registration mechanics.
   tail/ceiling region -- plus diag6/diag7) as all having hit the same
   single structural landmine rather than confirming a broader rule.
 
+## Result
+
+**CONFIRMED BROKEN on real hardware, 2026-11-12.** Same 270 "iLO FW
+Communication Issue" as every prior registration-variant diagnostic. This
+rules out the ceiling-entry hypothesis above: position in the table is not
+the differentiator. Combined with diag1/4/5/6/7, this is the 6th
+consecutive, independently-isolated hardware-confirmed failure of "convert
+an anonymous (`present=0`) VirtRange entry to `present=1`" -- tested across
+every variable this project could isolate (new entry vs. reused slot,
+relocated array vs. untouched, new `mod_id` vs. existing/aliased, ceiling
+entry vs. mid-table entry) with zero survivors. See
+`research/2026-11-12-virtrange-reattribution-closed.md` for the full
+cumulative analysis and conclusion.
+
 ## What was verified (static)
 
 - Entry 1 reconfirmed as Health's own `.health.elf.text` module
