@@ -146,19 +146,50 @@ relying only on the raw-byte/Capstone scripting used so far:
   check on its own, since this is a stripped binary where most functions
   are auto-named `FUN_xxxxxxxx`, but consistent with everything else).
 
+## Checking for runtime-computed (loop/array-index) access
+
+A loop indexing into entry 2 from a static base wouldn't necessarily load
+one of the 9 exact tail addresses -- it would load some *other* literal
+base address anywhere in entry 2's full range (`0xe91000`-`0xf22000`,
+module start to module end, not just the tail), then index into it at
+runtime. Checked for that directly: scanned all of Health's `.text`+`.data`
+for any literal word landing anywhere in that full range.
+
+**Found exactly the same 9 values, nowhere else.** There is no other
+literal base address, anywhere in Health's compiled code or data, that
+points into any part of entry 2's module -- only the 9 already-known,
+already-unreferenced constants. This means there's no second candidate
+base for a static-base/runtime-index loop to even start from.
+
+**What this does and doesn't settle:** it rules out the common case (a
+loop or array access from a literal-constant base baked into the code).
+It does **not** rule out a base computed via register arithmetic from
+some other starting point entirely (e.g. Health's own `.text` base plus a
+large, non-literal offset derived from a parameter, return value, or
+further indirection) -- that would require genuine value-set/symbolic
+execution tracing every register through every loop in Health's 1,214
+functions, which is beyond what static operand/literal scanning can
+settle with certainty. This is also the point where this project's
+earlier-identified blocker applies: there's no live telemetry access to
+directly observe what memory is actually touched at runtime
+(`research/2026-11-06-v3-fan-restore-strategy.md`), so a fully conclusive
+answer isn't achievable through static analysis alone.
+
 ## Where this leaves entry 2
 
-Still unresolved, not reopened. Two of the three plausible consumer
-mechanisms have now been checked and ruled out: the one register-computed
-access pattern this codebase actually uses (base register + offset --
-nothing loads the module's own base address at all, so this compiler
-doesn't use that pattern here), and a DMA/scatter-gather consumer (the one
-real SG-terminology hit in this codebase is unrelated, describing external
-PCI storage controllers, not this region). Before placing anything here,
-the honest remaining steps are:
-1. Rule out runtime-computed (loop/array-index) access from some other
-   base -- not detectable by static operand matching, would need real
-   value-set/symbolic analysis.
+Still unresolved, not reopened. Every statically-checkable consumer
+mechanism has now been checked and ruled out: direct immediate loads
+(zero, across 3.5M instructions, whole firmware), base+offset from the
+module's own base (nothing loads it), DMA/scatter-gather (the one real
+SG-terminology hit is unrelated), and a static-base loop/array index
+(no other literal base exists anywhere in Health's code pointing into
+this module). What remains is a genuine limit of static analysis, not a
+further item to check the same way:
+1. A base computed via register arithmetic from some entirely different
+   starting point, through layers of indirection static operand/literal
+   scanning can't trace -- would need real value-set/symbolic execution
+   across all 1,214 of Health's functions, or live telemetry this project
+   doesn't currently have access to.
 2. Independently determine whether this specific byte range is genuinely
    padding/BSS at all versus some other kind of embedded data (its own
    non-code disassembly signature suggests it may not be ordinary BSS).
