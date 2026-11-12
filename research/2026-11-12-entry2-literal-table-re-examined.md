@@ -270,6 +270,32 @@ runtime infrastructure -- not something that opened up or changed when fan
 was removed. This directly answers the concern that any explanation here
 needs to hold up across versions: it does.
 
+## Extended to 2.81 and 2.82
+
+Extracted genuine 2.81 and 2.82 firmware locally (already-downloaded,
+hash-verified `.bin` files; ran this project's own `ilo4_extract.py` in
+the `python:2.7` Docker container to get real `elf.bin`s -- 2.78/2.79 are
+not available locally and weren't pursued). Repeated both checks:
+
+| Version | `.health.elf.data` `text_size` | Signature function found | Bootstrap pointer (`r0`) | Lands in entry 2 tail? |
+|---|---|---|---|---|
+| 2.77 | `0x2e8c` | `FUN_00e78640` | `0xc305c` | yes (`0xc1d0` past boundary) |
+| 2.80 | `0x2e8c` | `FUN_00e6feac` | `0xb7058` | yes (`0x1cc` past boundary) |
+| 2.81 | `0x2e8c` | `FUN_00e74100` | `0xb7058` | yes (`0x1cc` past boundary) |
+| 2.82 | `0x2e8c` | `FUN_00e74214` | `0xb7058` | yes (`0x1cc` past boundary) |
+
+All four found via the same signature search (a function containing ADD
+immediates `0x2000`, `0x20000`, and `0x30000` together), and all four have
+the identical instruction sequence at their entry
+(`mov ip,sp; push ...; ldr ip,[pc,#-0x27c]; ldr r0,[pc,#-0x2d4];
+ldr r1,[r0]; add r3,r1,#0x2000`). 2.80/2.81/2.82 share the exact same
+bootstrap value, consistent with sharing one data layout after the
+2.77->2.78 removal; 2.77's differs, consistent with its larger `.text`
+shifting unrelated layout -- but the structural fact (a live pointer
+dereferenced from inside entry 2's tail) holds in all four. This is as
+thorough a cross-version check as the locally-available genuine firmware
+allows.
+
 ## Where this leaves entry 2 -- resolved
 
 Closed, not reopened. Every static consumer-matching check that came back
