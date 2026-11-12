@@ -240,6 +240,36 @@ specific 9-value evidence held up (it didn't), but because the deeper,
 more rigorous check found real evidence of exactly the kind of live use
 the original postmortem predicted.
 
+## Cross-version confirmation (2.77 vs 2.80)
+
+Checked whether this mechanism is version-independent, using the genuine,
+already-downloaded 2.77 firmware (fan still worked on 2.77) against the
+already-extracted 2.80 (fan removed). Two checks:
+
+1. **Entry 2's real content size (`text_size`) is byte-identical across
+   versions**: `0x2e8c` in both, same `.secinfo` index (81), despite 2.77
+   having ~38KB *more* code elsewhere (`.health.elf.text` is `0xacf48`
+   bytes in 2.77 vs. `0xa37a8` in 2.80 -- exactly the previously-documented
+   fan/ocsd/ocbb removal). This boundary has nothing to do with what was
+   removed between versions; it's a fixed, version-independent constant.
+2. **The exact same function exists in 2.77**, found by signature (the
+   same three offset immediates, `0x2000`/`0x20000`/`0x30000`, appearing
+   together in one function): `FUN_00e78640` in 2.77 is
+   **byte-for-byte identical**, instruction for instruction, to 2.80's
+   `FUN_00e6feac` (`mov ip,sp; push ...; ldr r0,[pc,#-0x2d4]; ldr r1,[r0];
+   add r3,r1,#0x2000`). Resolving its bootstrap pointer against genuine
+   2.77 bytes: **`r0 = 0xc305c`** -- a *different* specific value than
+   2.80's `0xb7058`, but it **also** falls inside entry 2's tail
+   (`0xc1d0` bytes past the content boundary, well within the module).
+
+The specific bootstrap-pointer value shifting between versions while the
+*pattern* (a generic, shared logging helper dereferencing a pointer stored
+inside this module's reserved-but-"unused" space) stays identical is
+exactly what's expected if this is genuine, version-independent Health
+runtime infrastructure -- not something that opened up or changed when fan
+was removed. This directly answers the concern that any explanation here
+needs to hold up across versions: it does.
+
 ## Where this leaves entry 2 -- resolved
 
 Closed, not reopened. Every static consumer-matching check that came back
@@ -250,12 +280,11 @@ codebase uses. The real mechanism -- a shared base pointer bootstrapped
 through one level of indirection, then used with large hard-coded field
 offsets -- was only visible to genuine value-set analysis, and it
 confirms real, intentional use of memory well inside what looked like
-free tail space. Entry 2 is not a safe placement candidate. There is no
-remaining ambiguity here worth further static checking; what would still
-add confidence (decompiling more of the functions that use this base
-pointer, or cross-checking whether the same bootstrap pattern exists
-identically in 2.77-2.82) is corroboration, not a different possible
-verdict.
+free tail space. Cross-checked against genuine 2.77 firmware (fan still
+worked there): the exact same function, byte-for-byte, does the exact
+same thing, also landing inside entry 2's tail -- version-independent,
+unrelated to fan removal. Entry 2 is not a safe placement candidate, and
+there is no remaining ambiguity here worth further checking.
 
 This finding doesn't change the VirtRange closure
 (`2026-11-12-virtrange-reattribution-closed.md`), which rests on
