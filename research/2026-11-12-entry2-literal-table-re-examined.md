@@ -102,25 +102,42 @@ to overwrite than ordinary dead data, not less -- corrupting a live DMA
 target can cause silent, delayed memory corruption elsewhere rather than
 an immediate, obvious crash.
 
+## Checking for a DMA descriptor consumer
+
+Searched Health's `.text`+`.data` for DMA/scatter-gather terminology.
+Found one real hit -- `"QueueNum: %x\nSGListCnt %x\nSGTotalLo: %x\nCmdAddr: %x"`,
+genuine CISS (HP Smart Array) scatter-gather debug-dump terminology -- but
+it's a format string for printing *external PCI storage controller*
+command structures (attached RAID cards), at true-vaddr `0xe21b88`, with
+no connection to entry 2's region or to the 9 values. Dead end.
+
+Also clarified something important while tracing this: the 9 values
+themselves are **not stored inside the free/tail region at all**. Their
+storage locations (`0xe8f9cc`-`0xe9010c`) sit inside entry 1's
+(`.health.elf.text`) own real, compiled content -- which ends at
+`0xe907a8`, comfortably above all 9 -- not in its slack. They are
+genuine compiler-emitted data, not junk or padding themselves; the open
+question was only ever whether they're *used as addresses* pointing into
+entry 2, and no mechanism found so far (immediate load, base+offset,
+DMA) shows that they are.
+
 ## Where this leaves entry 2
 
-Still unresolved, not reopened. The one register-computed access pattern
-this codebase actually uses (base register + offset) was checked and
-ruled out -- nothing loads the module's own base address at all, so this
-compiler doesn't use that pattern here. Before placing anything here, the
-honest remaining steps are:
+Still unresolved, not reopened. Two of the three plausible consumer
+mechanisms have now been checked and ruled out: the one register-computed
+access pattern this codebase actually uses (base register + offset --
+nothing loads the module's own base address at all, so this compiler
+doesn't use that pattern here), and a DMA/scatter-gather consumer (the one
+real SG-terminology hit in this codebase is unrelated, describing external
+PCI storage controllers, not this region). Before placing anything here,
+the honest remaining steps are:
 1. Rule out runtime-computed (loop/array-index) access from some other
    base -- not detectable by static operand matching, would need real
    value-set/symbolic analysis.
-2. Rule out a non-CPU consumer (e.g. a DMA descriptor table) -- the
-   evenly-spaced, 64KB-granular pattern is also consistent with hardware
-   scatter-gather descriptors, which would be invisible to any CPU-side
-   instruction scan and would make this *more* dangerous to touch, not
-   less.
-3. Independently determine whether this specific byte range is genuinely
+2. Independently determine whether this specific byte range is genuinely
    padding/BSS at all versus some other kind of embedded data (its own
    non-code disassembly signature suggests it may not be ordinary BSS).
-4. Only after all three come back clean would this be a credible
+3. Only after both come back clean would this be a credible
    placement candidate -- and even then, only for content that's been
    through the same rigorous verification v4's fan-closure content
    already received.
