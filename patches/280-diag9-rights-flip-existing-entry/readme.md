@@ -62,6 +62,35 @@ correctly regardless of this patch.
   interpreting any future finding (e.g. the still-unidentified
   `patches/280-tools` brick cause).
 
+## Result -- bricked, error 270 (2026-11-12)
+
+Flashed on real hardware; POST showed error 270, the same total-RTOS-failure
+signature as every prior VirtRange-presence diagnostic (diag1, 4, 5, 6, 7,
+8). This is an unambiguous positive failure signal (not an absence-of-error
+read), so per this project's own verification checklist no further steps
+were needed to confirm the brick.
+
+**Verdict: permission bits are also fixed at build time for an
+already-present entry, not just presence itself.** The INTEGRITY Address
+Space model enforces the *entire* `MEM_RANGE` descriptor (presence AND
+permission) as immutable once built. This closes off "reuse an existing
+module's slot with different permissions" as a mechanism, on top of the
+already-closed "create a new present link" and "existing module space is
+free" findings -- see the addendum in
+`research/2026-11-12-virtrange-reattribution-closed.md` for the combined
+picture across all 7 VirtRange-field hardware tests run in this project.
+
+Combined with the entry-2 dead-space investigation (confirmed live in all
+6 shipped firmware versions, `research/2026-11-12-entry2-literal-table-re-
+examined.md`), this means every axis of "edit a VirtRange descriptor field
+to carve out space for `fan`" has now been hardware-tested and closed:
+presence, permission, and "is there actually free space in an existing
+present module" all fail or come back negative. The only mechanism not
+ruled out by this family of tests is overwriting the *content* of an
+already-present, already-correctly-permissioned module in place (the
+technique `patches/277-tools`/`patches/280-tools`/`patches/280-memprobe-
+readonly` use, which never touches VirtRange at all).
+
 ## How to verify the result on hardware
 
 A missing BIOS POST error alone isn't sufficient -- several earlier

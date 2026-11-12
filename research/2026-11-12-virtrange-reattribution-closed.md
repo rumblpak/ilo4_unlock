@@ -123,6 +123,42 @@ prove none exists -- only that the two most concrete, checkable
 raises confidence that the verdict above isn't an artifact of an
 undetected scripting bug or an unexamined parallel structure.
 
+## Addendum, 2026-11-12 (diag9): permission bits are also fixed at build time
+
+A follow-up question this closure didn't address: every bricked build
+above changed `present` (dw1) from 0 to 1. Does the kernel's build-time
+immutability extend to an **already-present** entry's permission bits
+(`rights`, dw2: 5=executable, 7=data), or is only *presence* fixed, with
+permission free to change on a region the kernel already has real MMU
+backing for?
+
+`patches/280-diag9-rights-flip-existing-entry` tested this directly: took
+an existing, already-`present=1`, `rights=7` (data) VirtRange entry and
+flipped only its `rights` field to 5 (executable), in place --
+`present`/`rbase`/`rsize`/`mod_id`/content/callsite all untouched. This is
+a different variable than every build in the table above (which all
+toggled `present`), so it isn't folded into the "6/6" count, but it is the
+same investigation's natural next question.
+
+**Result: bricked with error 270**, the identical signature. Permission
+bits are *also* fixed at build time, not just presence. The INTEGRITY
+Address Space model enforces the entire `MEM_RANGE` descriptor -- presence
+and permission together -- as immutable once the image is built.
+
+This closes "reuse an existing module's slot with different permissions"
+as a mechanism too. Combined with the entry-2 dead-space investigation
+(confirmed live in all 6 shipped firmware versions,
+`research/2026-11-12-entry2-literal-table-re-examined.md`), every axis of
+"edit a VirtRange descriptor to carve out room for `fan`" that this
+project could isolate has now been hardware-tested: presence (6/6
+bricked), permission (1/1 bricked), and "is there free space in an
+existing present module at all" (no -- entry 2, the only one large
+enough, is live). The only mechanism not ruled out by this entire family
+is overwriting the *content* of an already-present, already-correctly-
+permissioned module in place -- the injection technique
+`patches/277-tools`/`patches/280-tools`/`patches/280-memprobe-readonly`
+use, which never touches VirtRange at all.
+
 ## Recommendation
 
 Per this project's own systematic-debugging discipline (3+ failures of the
