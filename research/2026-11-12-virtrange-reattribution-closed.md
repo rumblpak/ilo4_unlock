@@ -156,7 +156,7 @@ existing present module at all" (no -- entry 2, the only one large
 enough, is live). The only mechanism not ruled out by this entire family
 is overwriting the *content* of an already-present, already-correctly-
 permissioned module in place -- the injection technique
-`patches/277-tools`/`patches/280-tools`/`patches/280-memprobe-readonly`
+`patches/277-tools`/`patches/280-tools`/`patches/280-diag10-memprobe-readonly`
 use, which never touches VirtRange at all.
 
 ## Recommendation

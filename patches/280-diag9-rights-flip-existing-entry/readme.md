@@ -88,8 +88,8 @@ presence, permission, and "is there actually free space in an existing
 present module" all fail or come back negative. The only mechanism not
 ruled out by this family of tests is overwriting the *content* of an
 already-present, already-correctly-permissioned module in place (the
-technique `patches/277-tools`/`patches/280-tools`/`patches/280-memprobe-
-readonly` use, which never touches VirtRange at all).
+technique `patches/277-tools`/`patches/280-tools`/`patches/280-diag10-
+memprobe-readonly` use, which never touches VirtRange at all).
 
 ## How to verify the result on hardware
 

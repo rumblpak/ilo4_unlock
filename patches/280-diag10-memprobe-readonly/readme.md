@@ -1,4 +1,4 @@
-# iLO 2.80 minimal read-only memory probe
+# iLO 2.80 Diagnostic Build #10: minimal read-only memory probe
 
 Tests whether `patches/280-tools`'s still-unidentified brick cause is
 specific to one of its removed capabilities, by flashing a much smaller
@@ -116,7 +116,18 @@ original "help" handler content it replaces from
 `prev_data` field, so no proprietary firmware bytes are stored anywhere
 in this patch's own directory.
 
-This build's result hash (`firmware.bin.backdoored.toflash`), this run:
-`cade45d436bda777c6d85b79b0470462b93f7159` (SHA1) -- confirmed identical
-before and after the build script was refactored to assemble on the fly
-instead of reading a prebuilt binary.
+```
+tools/package_build.sh patches/280-diag10-memprobe-readonly/build_memprobe_readonly.py ilo4_280-diag10-memprobe-readonly
+mv ilo4_280-diag10-memprobe-readonly.toflash ilo4_280-diag10-memprobe-readonly.bin
+```
+
+The pipeline always names its own output `<name>.toflash`; this project's
+convention for the file actually handed over for flashing is
+`ilo4_<version>-diag<N>-<short-name>.bin` -- same bytes, renamed after the
+pipeline runs.
+
+This build's result hash, this run: `cade45d436bda777c6d85b79b0470462b93f7159`
+(SHA1) -- confirmed identical before and after the build script was
+refactored to assemble on the fly instead of reading a prebuilt binary,
+and identical again after this directory was renamed to the project's
+`diagN` convention (no build-logic change, path only).
