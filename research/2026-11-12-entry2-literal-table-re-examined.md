@@ -1,4 +1,4 @@
-# 2026-11-12: Re-examining the v1 postmortem's "9-hit" evidence for live BSS
+# 2026-11-12: Re-examining the v1 postmortem's "9-hit" evidence for live BSS -- RESOLVED: confirmed live, via a different mechanism
 
 Prompted by a request to find genuinely dead space in Health's existing
 (present=1) modules for the already-fully-characterized `fan` closure, now
@@ -175,28 +175,87 @@ directly observe what memory is actually touched at runtime
 (`research/2026-11-06-v3-fan-restore-strategy.md`), so a fully conclusive
 answer isn't achievable through static analysis alone.
 
-## Where this leaves entry 2
+## Value-set analysis with Ghidra's SymbolicPropogator -- the real answer
 
-Still unresolved, not reopened. Every statically-checkable consumer
-mechanism has now been checked and ruled out: direct immediate loads
-(zero, across 3.5M instructions, whole firmware), base+offset from the
-module's own base (nothing loads it), DMA/scatter-gather (the one real
-SG-terminology hit is unrelated), and a static-base loop/array index
-(no other literal base exists anywhere in Health's code pointing into
-this module). What remains is a genuine limit of static analysis, not a
-further item to check the same way:
-1. A base computed via register arithmetic from some entirely different
-   starting point, through layers of indirection static operand/literal
-   scanning can't trace -- would need real value-set/symbolic execution
-   across all 1,214 of Health's functions, or live telemetry this project
-   doesn't currently have access to.
-2. Independently determine whether this specific byte range is genuinely
-   padding/BSS at all versus some other kind of embedded data (its own
-   non-code disassembly signature suggests it may not be ordinary BSS).
-3. Only after both come back clean would this be a credible
-   placement candidate -- and even then, only for content that's been
-   through the same rigorous verification v4's fan-closure content
-   already received.
+Ran genuine symbolic value-set analysis (not just operand matching) across
+all 1,214 functions in Health's `.text`, using Ghidra's
+`SymbolicPropogator` with a custom `ContextEvaluator` tracking every
+register's resolved value after every instruction, plus the
+`evaluateReference` callback for computed addresses. This traces values
+through multi-instruction computation (e.g. `ldr`+`add`), which none of
+the earlier checks (literal-word scan, immediate-operand scan, base+offset
+scan) could do.
+
+**Found a genuine hit**, in `FUN_00e6feac` (a shared logging/assertion
+helper, structurally similar to the `FUN_008fd4fc`/`FUN_008fd670`
+debug-print infrastructure seen in the `dvcrcv` investigation):
+
+```
+ldr r0, [pc, #-0x2d4]   ; r0 = a literal pool constant
+ldr r1, [r0]            ; r1 = *r0  (pointer-to-pointer dereference)
+...
+add r3, r6, #0x2000     ; (field access #1, earlier in the function)
+...
+add r0, r1, #0x20000    ; (field access #2)
+...
+add r3, r1, #0x30000    ; (field access #3 -- the flagged hit)
+```
+
+Traced `r0`'s literal value against the real firmware bytes (not the
+scoped project, to rule out an artifact of analyzing a raw binary slice
+without full context): **`r0 = 0xb7058`**, a task-local address falling
+**460 bytes past** entry 2's declared content boundary (`0xb6e8c`) --
+i.e. inside the "tail." The code unconditionally dereferences it
+(`ldr r1, [r0]`) to get a shared base pointer, then uses that base with
+three different large, hard-coded offsets (`0x2000`, `0x20000`,
+`0x30000`) elsewhere in the same function. If `r1` resolves to entry 2's
+own module base at runtime (the natural reading, consistent with a
+classic compiler bootstrap-pointer idiom for a module's own global data
+segment), those three offsets land at task-local `0xb6000`, `0xd4000`,
+and `0xe4000` -- all deep inside the "tail," none anywhere near the
+`0x2e8c`-byte boundary that `text_size` suggested was the real content.
+
+## Conclusion
+
+This reverses the tentative direction of this investigation. The
+original v1 postmortem's *specific* evidence (the 9-value "table") does
+not hold up -- nothing loads those 9 values anywhere in the entire
+firmware (3.5M instructions). But its *underlying conclusion* -- "the
+zero-filled remainder is live working memory for the whole Health task,
+not scratch space" (`2026-11-06-fan-restore-v2-postmortem.md`) -- is now
+independently confirmed through a completely different mechanism: a
+shared, indirectly-bootstrapped base pointer that Health's own code
+genuinely uses to access fields deep inside what `text_size` alone made
+look like free tail space. `text_size` (the portion requiring
+file-provided initial values) was never a reliable proxy for "how much of
+this module's reserved space is actually used" -- the rest is working
+memory (BSS-equivalent + larger runtime structures), not just
+padding, exactly as the project's very first postmortem said, now with a
+completely independent line of evidence behind it.
+
+**Entry 2 is not a viable placement candidate.** This closes out the
+"search Health's existing modules for genuinely dead space" direction
+that this entire thread of investigation was pursuing -- not because the
+specific 9-value evidence held up (it didn't), but because the deeper,
+more rigorous check found real evidence of exactly the kind of live use
+the original postmortem predicted.
+
+## Where this leaves entry 2 -- resolved
+
+Closed, not reopened. Every static consumer-matching check that came back
+empty (direct immediate loads across 3.5M instructions, base+offset from a
+literally-loaded module base, DMA, static-base loop indexing) was empty
+for the right reason: none of those are the actual mechanism this
+codebase uses. The real mechanism -- a shared base pointer bootstrapped
+through one level of indirection, then used with large hard-coded field
+offsets -- was only visible to genuine value-set analysis, and it
+confirms real, intentional use of memory well inside what looked like
+free tail space. Entry 2 is not a safe placement candidate. There is no
+remaining ambiguity here worth further static checking; what would still
+add confidence (decompiling more of the functions that use this base
+pointer, or cross-checking whether the same bootstrap pattern exists
+identically in 2.77-2.82) is corroboration, not a different possible
+verdict.
 
 This finding doesn't change the VirtRange closure
 (`2026-11-12-virtrange-reattribution-closed.md`), which rests on
