@@ -270,31 +270,41 @@ runtime infrastructure -- not something that opened up or changed when fan
 was removed. This directly answers the concern that any explanation here
 needs to hold up across versions: it does.
 
-## Extended to 2.81 and 2.82
+## Extended to all six available versions: 2.77-2.82
 
 Extracted genuine 2.81 and 2.82 firmware locally (already-downloaded,
-hash-verified `.bin` files; ran this project's own `ilo4_extract.py` in
-the `python:2.7` Docker container to get real `elf.bin`s -- 2.78/2.79 are
-not available locally and weren't pursued). Repeated both checks:
+hash-verified `.bin` files). Then checked whether 2.78/2.79 could be
+obtained too: both download successfully from the URLs already recorded
+in `patches/278/config`/`patches/279/config`, and both hash-verify exactly
+against the `BINARY_SHA1` already on file. (The `.scexe` installer is a
+shell-script header followed by a plain gzip+tar archive appended at a
+fixed line offset -- extracted that archive directly with `tail`/`gzip`/
+`tar`, without ever executing the installer script itself, since running
+a downloaded self-extracting executable is exactly the kind of action
+worth avoiding when a safe alternative exists.) Ran this project's own
+`ilo4_extract.py` in the `python:2.7` Docker container on all four to get
+real `elf.bin`s, completing the set:
 
-| Version | `.health.elf.data` `text_size` | Signature function found | Bootstrap pointer (`r0`) | Lands in entry 2 tail? |
+| Version | `.health.elf.data` `text_size` | Signature function | Bootstrap pointer (`r0`) | Lands in entry 2 tail? |
 |---|---|---|---|---|
 | 2.77 | `0x2e8c` | `FUN_00e78640` | `0xc305c` | yes (`0xc1d0` past boundary) |
+| 2.78 | `0x2e8c` | `FUN_00e6feac` | `0xb7058` | yes (`0x1cc` past boundary) |
+| 2.79 | `0x2e8c` | `FUN_00e6feac` | `0xb7058` | yes (`0x1cc` past boundary) |
 | 2.80 | `0x2e8c` | `FUN_00e6feac` | `0xb7058` | yes (`0x1cc` past boundary) |
 | 2.81 | `0x2e8c` | `FUN_00e74100` | `0xb7058` | yes (`0x1cc` past boundary) |
 | 2.82 | `0x2e8c` | `FUN_00e74214` | `0xb7058` | yes (`0x1cc` past boundary) |
 
-All four found via the same signature search (a function containing ADD
-immediates `0x2000`, `0x20000`, and `0x30000` together), and all four have
-the identical instruction sequence at their entry
-(`mov ip,sp; push ...; ldr ip,[pc,#-0x27c]; ldr r0,[pc,#-0x2d4];
-ldr r1,[r0]; add r3,r1,#0x2000`). 2.80/2.81/2.82 share the exact same
-bootstrap value, consistent with sharing one data layout after the
-2.77->2.78 removal; 2.77's differs, consistent with its larger `.text`
-shifting unrelated layout -- but the structural fact (a live pointer
-dereferenced from inside entry 2's tail) holds in all four. This is as
-thorough a cross-version check as the locally-available genuine firmware
-allows.
+2.78 and 2.79 turned out to have the exact same `.health.elf.text`/`.data`
+addresses and sizes as 2.80 (confirming this project's own earlier
+finding that 2.78-2.82 share one stable layout), so the signature
+function sits at the literally identical address (`0xe6feac`) with
+byte-identical bytes in all three. 2.77's function address and bootstrap
+value differ (consistent with its larger, pre-removal `.text`), 2.81/2.82
+shift again (different code size from further changes), but the
+structural fact -- a live pointer dereferenced from inside entry 2's tail
+-- holds in **every version this firmware line has ever shipped**, not
+just the ones originally compared. This is the complete set; no further
+versions exist to check.
 
 ## Where this leaves entry 2 -- resolved
 
