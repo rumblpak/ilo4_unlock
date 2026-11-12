@@ -63,18 +63,32 @@ revisited.
 
 4. ~~`tools.S`'s `sprintf_fn`/`libc_malloc_fn`/`libc_free_fn` reference an
    address outside the firmware image and were never verified~~ --
-   **struck after re-checking the source, 2026-11-12.** This is real and
-   still unverified, but it's a weak candidate for `280-tools`'s brick,
-   not a good one: `research/2026-11-05-278-282-feasibility.md` says in
-   the same breath that this is "true for 2.77 too -- not something
-   introduced by porting" and that "the core probe functionality doesn't
-   depend on them." These three helpers are only reached by a live,
-   interactively-typed command (the malloc/free helper commands,
-   `sprintf`-formatted output) -- they can't run before SSH is reachable.
-   `280-tools` bricks at **boot**, before SSH is ever reachable (per the
-   postmortem's own reasoning in the same doc). Code that's never
-   executed before boot completes can't cause a boot-time crash. Keeping
-   this struck-through rather than deleted so the correction is visible.
+   **struck after re-checking the source, 2026-11-12, then adversarially
+   re-checked a second time against `tools.S` itself (not just prose
+   summaries of it).** Confirmed directly by reading
+   `patches/277-tools/asm/tools.S` (byte-identical to this project's 2.80
+   port's logic): `libc_malloc`/`libc_free` are called only inside
+   `cmd_alloc`/`cmd_free`, reached by comparing the user-supplied
+   argument's first byte against `'a'`/`'f'` -- unreachable without a
+   live, interactively-typed command. `sprintf` is defined as a trampoline
+   but **never called anywhere in the file** (`grep -n "bl sprintf"`
+   returns nothing) -- it's simply dead code, not merely hard to reach.
+
+   The one claim worth being honest about: "280-tools bricks before SSH
+   is ever reachable" is the *original research's own characterization*
+   (`research/2026-11-05-278-282-feasibility.md`), not something
+   independently reachability-confirmed for that specific brick the way
+   diag7's unreachability was later confirmed this session. It's inferred
+   from the garbage version readback (`255.255`) and BIOS POST 270 on the
+   very next boot after flashing -- a sequence that leaves no window for
+   anyone to have interactively run `help a`/`help f` before the first
+   boot's POST check already failed. That inference is solid on its own
+   terms; it just isn't the same thing as a directly-tested fact.
+
+   Net: this candidate is ruled out, more confidently than the first
+   correction stated, but the "before SSH reachable" premise it leans on
+   is inherited, not independently re-verified. Keeping this
+   struck-through rather than deleted so the correction is visible.
 
 5. **2.81 and 2.82's plain signature-bypass-only builds were never
    separately hardware-tested** -- only 2.80 was confirmed working. Low
