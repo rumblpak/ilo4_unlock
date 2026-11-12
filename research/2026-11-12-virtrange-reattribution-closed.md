@@ -90,6 +90,39 @@ to.
   which `research/2026-11-05-278-282-feasibility.md` already flagged as
   unexplored).
 
+## Addendum, 2026-11-12: checked for a nuanced/undetected breakage before accepting the verdict above
+
+Before trusting "closed," checked two things a plain round-trip/structural
+verification wouldn't catch:
+
+1. **Full byte-diff, stock vs. diag8-patched `elf.bin`.** Exactly 4
+   contiguous differing byte-runs: the 1-byte ELF sig-bypass patch, and
+   the 3 fields actually intended to change (`present`, `rights`,
+   `mod_id`). Nothing else in the 24MB file differs -- the build script
+   isn't silently touching anything adjacent.
+2. **Decoded `TaskInfo`'s second array** (documented but never actually
+   read, at `TaskInfo+0x14`, count at `+0x10`, see
+   `2026-11-06-kernel-re-methodology-and-pitfalls.md`) for Health
+   specifically, to check whether it's a parallel/shadow structure that
+   also needs updating when a `VirtRange` entry's `present` bit flips --
+   something none of the 8 diagnostics ever touched or checked.
+   - 270 entries, not 63 -- **not** a 1:1 shadow of the `VirtRange` array.
+   - Entry-type distribution: `{1: 218, 3: 49, 7: 2, 4: 1}`.
+   - Checked every field of all 270 entries against entry 62's and entry
+     11's address ranges (both task-local and true-vaddr hypotheses):
+     **zero matches**.
+   - The two pointer-bearing (`type=7`) entries point ~0x70/0x63 bytes
+     *before* `.secinfo`'s own start -- consistent with this being
+     INTEGRITY's "Variable" kernel object declarations (a lightweight
+     IPC/sync primitive the task declares), not a memory-region shadow
+     table.
+
+Neither check found evidence of a subtler breakage mechanism. This doesn't
+prove none exists -- only that the two most concrete, checkable
+"what else could be inconsistent" candidates came back clean -- but it
+raises confidence that the verdict above isn't an artifact of an
+undetected scripting bug or an unexamined parallel structure.
+
 ## Recommendation
 
 Per this project's own systematic-debugging discipline (3+ failures of the
