@@ -61,12 +61,20 @@ revisited.
    fans) that doesn't touch firmware at all -- it was set aside out of
    caution about a live write, not because it was ruled out.
 
-4. **`tools.S`'s `sprintf_fn`/`libc_malloc_fn`/`libc_free_fn` reference an
-   address outside the firmware image and were never verified for any
-   version**, including 2.80 -- explicitly flagged as un-verifiable
-   statically and never investigated via another method (live debugger,
-   alternate static technique). A real, acknowledged, never-chased
-   candidate explanation for `280-tools`'s still-unidentified brick cause.
+4. ~~`tools.S`'s `sprintf_fn`/`libc_malloc_fn`/`libc_free_fn` reference an
+   address outside the firmware image and were never verified~~ --
+   **struck after re-checking the source, 2026-11-12.** This is real and
+   still unverified, but it's a weak candidate for `280-tools`'s brick,
+   not a good one: `research/2026-11-05-278-282-feasibility.md` says in
+   the same breath that this is "true for 2.77 too -- not something
+   introduced by porting" and that "the core probe functionality doesn't
+   depend on them." These three helpers are only reached by a live,
+   interactively-typed command (the malloc/free helper commands,
+   `sprintf`-formatted output) -- they can't run before SSH is reachable.
+   `280-tools` bricks at **boot**, before SSH is ever reachable (per the
+   postmortem's own reasoning in the same doc). Code that's never
+   executed before boot completes can't cause a boot-time crash. Keeping
+   this struck-through rather than deleted so the correction is visible.
 
 5. **2.81 and 2.82's plain signature-bypass-only builds were never
    separately hardware-tested** -- only 2.80 was confirmed working. Low
