@@ -121,6 +121,31 @@ question was only ever whether they're *used as addresses* pointing into
 entry 2, and no mechanism found so far (immediate load, base+offset,
 DMA) shows that they are.
 
+## Verifying with Ghidra
+
+Cross-checked the findings above against Ghidra directly rather than
+relying only on the raw-byte/Capstone scripting used so far:
+
+- **The `SGListCnt` string, confirmed and traced to its actual consumer.**
+  Ghidra defines the real string (starting a bit earlier than the
+  substring search found, at true-vaddr `0xe21b50`) with exactly one
+  reference, from `0xe219f8`. Disassembling that site: `add r0, pc, #84`
+  (computing the string's address) immediately followed by `bl` to a
+  separate function -- a textbook `printf`-style call, with the
+  preceding ~10 instructions loading byte/halfword/word fields (offsets
+  `0x18`-`0x26`) from a structure pointer in `r5` to pass as the `%x`
+  arguments. This is a legitimate, unrelated debug dump of a storage
+  command structure's fields -- fully confirmed, not just inferred from
+  the string's content.
+- **The scalar-operand scan, extended from Health's `.text` alone
+  (118,287 instructions) to the entire firmware.** Re-ran it across
+  every disassembled instruction in the whole 24MB image -- all
+  **3,497,124** of them, every task, not just Health. Zero matches for
+  any of the 9 target values, anywhere.
+- **No function anywhere in the firmware has "dma" in its name** (a weak
+  check on its own, since this is a stripped binary where most functions
+  are auto-named `FUN_xxxxxxxx`, but consistent with everything else).
+
 ## Where this leaves entry 2
 
 Still unresolved, not reopened. Two of the three plausible consumer
