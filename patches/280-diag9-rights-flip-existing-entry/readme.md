@@ -62,6 +62,21 @@ correctly regardless of this patch.
   interpreting any future finding (e.g. the still-unidentified
   `patches/280-tools` brick cause).
 
+## How to verify the result on hardware
+
+A missing BIOS POST error alone isn't sufficient -- several earlier
+diagnostics in this series were only checked that way, and this project's
+own adversarial review flagged the gap. Full checklist:
+
+1. Flash and power on; watch POST for error 270 specifically.
+2. Confirm iLO's version string reads correctly (not `255.255`/`0xFF.0xFF`)
+   -- via BIOS's iLO Configuration screen, or SSH/web UI once reachable.
+3. Ping iLO's management IP from another machine.
+4. SSH into iLO as usual; confirm a real shell prompt and that `version`
+   reports correctly.
+5. Load the web UI (HTTPS) as a second independent confirmation.
+6. If anything is ambiguous, do a full AC power cycle before concluding.
+
 ## What was verified (static)
 
 - Entry 14 reconfirmed fresh (not hardcoded) as present=1, rights=7,

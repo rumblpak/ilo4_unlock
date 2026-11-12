@@ -83,6 +83,15 @@ to the now-closed VirtRange re-attribution investigation.
   bootstrap-pointer finding with real runtime data instead of static
   inference).
 
+## How to verify the result on hardware
+
+See `patches/280-diag9-rights-flip-existing-entry/readme.md`'s checklist
+(POST, iLO version readback, network ping, SSH shell, web UI -- a missing
+POST error alone isn't sufficient). If all five pass, also try the probe
+itself over SSH: `help r<hex-address>` should echo back readable memory
+without a shell crash, confirming the read path actually works end to
+end, not just that the firmware boots with the patch present.
+
 ## What was verified (static)
 
 - Genuine "help" handler content at the injection offset reconfirmed,
