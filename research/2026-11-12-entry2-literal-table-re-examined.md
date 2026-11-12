@@ -67,17 +67,60 @@ operand would not appear in this scan. The region is not proven dead --
 only the specific piece of evidence previously used to call it live has
 failed to replicate under direct verification.
 
+## Checking for register-computed (base + offset) access
+
+The remaining gap in the scan above: a value *computed* at runtime (base
+register + offset) rather than loaded as a single immediate wouldn't show
+up in an operand-scalar match. Checked directly: searched all of Health's
+`.text` for any instruction loading entry 2's own module base address
+(`0xe91000` true-vaddr / `0xb4000` task-local) as an immediate -- the
+precondition for a later `base + offset` computation to reach into the
+tail at all.
+
+**Zero instructions load the base address either.** This is itself
+informative: it means this compiler does not use a shared
+base-register-plus-offset pattern for accessing this module's globals at
+all -- each global variable access apparently gets its own, individually
+hardcoded absolute-address literal (the normal pattern for non-PIC ARM
+code with simple scalar globals). Since that's the only addressing
+convention in use, the exhaustive 118,287-instruction immediate-operand
+scan already covers the one mechanism this codebase actually uses to
+reach any address in this module, including the tail. There is no
+register-computed access pattern left unchecked for *this specific
+addressing convention*.
+
+**What would still slip past this:** runtime-computed array/loop indexing
+from a *different* base that happens to resolve into this range at
+runtime (not detectable by static operand matching at all, would need
+real value-set/symbolic analysis across loop bodies), or access by
+something other than the ARM CPU entirely -- e.g. if these 9 values are
+actually a hardware DMA scatter-gather descriptor table (a plausible
+explanation for 9 evenly-spaced 64KB-granular addresses in BMC firmware),
+they'd be read by a DMA engine, never by a CPU instruction, which would
+equally explain zero CPU-side references and would be **more** dangerous
+to overwrite than ordinary dead data, not less -- corrupting a live DMA
+target can cause silent, delayed memory corruption elsewhere rather than
+an immediate, obvious crash.
+
 ## Where this leaves entry 2
 
-Still unresolved, not reopened. Before placing anything here, the
-honest next steps are:
-1. Check for non-immediate access patterns (e.g. a base register loaded
-   from some other location and indexed at runtime) -- this would need
-   broader dataflow analysis, not just an operand scan.
-2. Independently determine whether this specific byte range is genuinely
+Still unresolved, not reopened. The one register-computed access pattern
+this codebase actually uses (base register + offset) was checked and
+ruled out -- nothing loads the module's own base address at all, so this
+compiler doesn't use that pattern here. Before placing anything here, the
+honest remaining steps are:
+1. Rule out runtime-computed (loop/array-index) access from some other
+   base -- not detectable by static operand matching, would need real
+   value-set/symbolic analysis.
+2. Rule out a non-CPU consumer (e.g. a DMA descriptor table) -- the
+   evenly-spaced, 64KB-granular pattern is also consistent with hardware
+   scatter-gather descriptors, which would be invisible to any CPU-side
+   instruction scan and would make this *more* dangerous to touch, not
+   less.
+3. Independently determine whether this specific byte range is genuinely
    padding/BSS at all versus some other kind of embedded data (its own
    non-code disassembly signature suggests it may not be ordinary BSS).
-3. Only after both of those come back clean would this be a credible
+4. Only after all three come back clean would this be a credible
    placement candidate -- and even then, only for content that's been
    through the same rigorous verification v4's fan-closure content
    already received.
