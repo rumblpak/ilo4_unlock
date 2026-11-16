@@ -253,11 +253,24 @@ arm-none-eabi-objcopy -O binary probe_readonly.o probe_readonly.bin
 The resulting binary contains the probe code plus the health_ipc_call
 trampoline and the command string, ready to be appended to the V4 block.
 
-### What this does NOT prove
+### How to verify the build
 
-- The health side actually processes the `"t\0"` command and returns
-  valid data (the Health-side service-ID switch was removed in 2.78)
-- The response format matches what this probe expects in R0
-- The probe's own dependency closure is complete (the health_ipc_call
-  plumbing may have callees not in the current closure)
-- Any runtime behavior of the probe on real hardware
+**Static build verification** (before flashing):
+
+1. Run `build_fan_restore_v4.sh` and confirm it completes without error.
+2. Verify the `fan_block_v4.bin` SHA1 matches: `30bb13b4ee593baa4f095173bddb64dab6f11a69`
+3. Verify the final firmware SHA1 matches the documented hash for this build.
+
+**Hardware verification** (after flashing):
+
+1. Flash and power on; watch POST for error 270 specifically.
+2. Confirm iLO's version string reads correctly (not `255.255`/`0xFF.0xFF`) -- via BIOS's iLO Configuration screen, or SSH/web UI once reachable.
+3. Ping iLO's management IP from another machine.
+4. SSH into iLO as usual; confirm a real shell prompt and that `version` reports correctly.
+5. Load the web UI (HTTPS) as a second independent confirmation.
+6. If anything is ambiguous, do a full AC power cycle before concluding.
+
+A missing BIOS POST error alone is not sufficient -- the full checklist above
+is required. See `research/2026-11-06-v3-fan-restore-strategy.md` for the
+rationale: error 270 indicates total RTOS failure, but absence of an error
+does not prove a *clean* boot (it might just be a quieter failure).

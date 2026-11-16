@@ -70,14 +70,15 @@ def file_off_277(true_vaddr):
 # entirely, need re-encoding -- see cross_refs.json (700 such instructions,
 # all captured via Ghidra's own reference resolution, not hand-decoded).
 #
-# v4 note: chunks 5, 6, 7, 11 are widened from v3's boundaries -- an
-# exhaustive scan of every `ldr Rd, [pc, #imm]` in the closure (see
-# research/2026-11-06-v3-literal-pointer-relocation-gap.md) found 10 literal
+# v4 note: chunk 0 and chunks 5, 6, 7, 11 are widened from v3's boundaries --
+# an exhaustive scan of every `ldr Rd, [pc, #imm]` in the closure
+# (research/2026-11-06-v3-literal-pointer-relocation-gap.md) found 11 literal
 # loads whose literal pool word fell entirely outside v3's chunk boundaries,
-# meaning that data was silently dropped from the assembled block. Each of
-# the 4 widenings below was chosen as the tightest 4-byte-aligned extension
-# that covers every such literal address found by that scan, confirmed to
-# introduce no overlap with any neighboring chunk.
+# meaning that data was silently dropped from the assembled block. Chunk 0
+# absorbs a literal at 0xe1aaa0 (gap between chunk 0's end and chunk 1's
+# start). Chunks 5, 6, 7, 11 each absorb the 10 remaining outliers. Each
+# widening was chosen as the tightest 4-byte-aligned extension covering every
+# such literal, confirmed to introduce no overlap with any neighboring chunk.
 # ---------------------------------------------------------------------------
 SUPERCHUNKS = [
     (0xe1589c, 0xe1a968),  # merged -- absorbs shared-tail fragments at 0xe1a170/0xe1a17c/0xe1a2a0/0xe1a83c,
@@ -108,10 +109,11 @@ SUPERCHUNKS = [
 ORIGINAL_SUPERCHUNKS = list(SUPERCHUNKS)
 
 V4_CHUNK_WIDENINGS = {
+    0:   (0xe1589c, 0xe1a968),  # was (0xe1589c, 0xe1a968) -- absorbs literal at 0xe1aaa0 (+8, 4-aligned)
     5:  (0xe2d0c4, 0xe2e1f0),  # was (0xe2d0c4, 0xe2dfec) -- absorbs literals up to 0xe2e1e8 (+4, 4-aligned)
     6:  (0xe2e234, 0xe2e758),  # was (0xe2e338, 0xe2e758) -- absorbs literal at 0xe2e234
     7:  (0xe32ad8, 0xe32f08),  # was (0xe32b80, 0xe32f08) -- absorbs literals at 0xe32adc/0xe32ae4 (-8, 4-aligned)
-    11: (0xe3e2e4, 0xe3e5cc), # was (0xe3e2e4, 0xe3e4b0) -- absorbs literals up to 0xe3e5c8 (+4, 4-aligned)
+    11: (0xe3e2e4, 0xe3e5cc),  # was (0xe3e2e4, 0xe3e4b0) -- absorbs literals up to 0xe3e5c8 (+4, 4-aligned)
 }
 for idx, new_range in V4_CHUNK_WIDENINGS.items():
     SUPERCHUNKS[idx] = new_range
@@ -425,7 +427,7 @@ def find_ldr_literal_sites():
     return sites
 
 ldr_sites = find_ldr_literal_sites()
-print(f"\nfound {len(ldr_sites)} ldr-literal sites, all with literal inside some chunk (v3 had 10 outside)")
+print(f"\nfound {len(ldr_sites)} ldr-literal sites, all with literal inside some chunk (v3 had 11 outside)")
 
 # Group by literal address (several instructions may share one literal pool word).
 literal_addrs = sorted(set(lit for _src, lit in ldr_sites))
