@@ -121,3 +121,143 @@ this. Specific new residual risk:
 
 Result hash (`firmware.bin.backdoored.toflash`), this build:
 `f033cd582b6ac5563ec50ef8c4fa528240e25c4a` (SHA1).
+
+## Service-ID Dispatch (issue #20)
+
+A full-scan of the 24MB 2.80 ELF revealed **two independent dispatch
+mechanisms** that coexist:
+
+### Three-layer system (service IDs 5–8)
+
+ConAppCLI→Health IPC calls use a three-layer dispatch:
+
+| Layer | Address | Role |
+|---|---|---|
+| Entry Wrapper | file offset 0x4E74 | MOV R0, #N; B common → selects service ID |
+| health_ipc_call | 0x3e420 (0x10828) | IPC stub, packages (SP, SP+0x500) |
+| Handler table | ~0x5a700 | Function-pointer dispatch table |
+
+**No direct BL calls to `health_ipc_call` (0x3e420) exist in the ELF.**
+This path handles service IDs 5–8 (health, fan, ocsd, ocbb). The Entry
+Wrapper pattern appears ~1570× for health (MOV R0, #5) and ~1415× for fan
+(MOV R0, #6).
+
+### Trampoline dispatch (service IDs 291–315)
+
+A parallel mechanism exists for service IDs 291–315 via four dispatcher
+trampolines at file offsets 0x22878, 0x4A970, 0x6715C, and 0x83840. These
+use direct BL calls to handler addresses (in the 0xE28F1Fxx range) and
+handle a separate class of internal Health services (likely NVDIMM-related).
+
+This is **not** part of the ConAppCLI path — it handles internal Health task
+calls. See `research/2026-11-15-v4-adversarial-review.md#D` for full details.
+
+### Custom ARM encoding
+
+The firmware uses a **non-standard encoding** for `MOV Rd, #imm12`:
+`0xE3A0xxxx` (bits 23–20 = `1010`) instead of the standard `0xE380xxxx`
+(bits 23–20 = `1000`). All other dispatcher instructions use standard ARM
+encoding.
+
+### Calling convention (fn_handler.S, 2.77 firmware)
+
+The ConAppCLI-side handler calling convention is documented in
+`patches/277/asm/fn_handler.S`:
+
+```
+PUSH {R11, R12, LR, PC}       ; save context
+SUB    R11, R12, #4           ; compute exit address
+SUB    SP, SP, #0xA00         ; 0xA00-byte IPC struct
+STR    R0, [SP]               ; service ID at [SP+0]
+ADD    R0, R7, #0x1000        ; input string pointer
+--- parse string char-by-char ---
+MOV    R0, SP                 ; arg1
+ADD    R1, SP, #0x500         ; arg2
+BL     0x3e420                ; health_ipc_call(SP, SP+500)
+LDR    R0, [SP, #0x500]       ; read result
+LDMDB  R11, {R11, SP, PC}     ; exit
+```
+
+Any probe code placed in the V4 block would need to replicate this calling
+convention to invoke existing handlers, since no direct BL to 0x3e420
+exists in the ELF (for the ConAppCLI path).
+
+**Parameter layout** (0xA00 bytes at SP):
+- `[SP+0]`: service ID (5=health, 6=fan, 7=ocsd, 8=ocbb)
+- `[SP+4]`: input string (space-stripped, from R7+0x1000)
+- `[SP+0x500]`: result area (output from health_ipc_call)
+
+## Minimal Read-Only Probe (issue #20, step 3)
+
+A minimal read-only probe is provided in
+`patches/280-fan-restore-v4/probe_readonly.S`. It implements a
+12-function dependency closure that reads fan thermal status via
+`health_ipc_call` without modifying any hardware.
+
+### What it does
+
+The probe calls `health_ipc_call` with the fan service ID (6) and the
+command string `"t\0"` (fan thermal query). It does not write to any
+hardware registers, does not change fan speeds, and does not modify
+any existing Health code. It is purely a read-only status probe.
+
+### Calling path
+
+The probe follows the fn_handler.S calling convention (the ConAppCLI-side
+path, service IDs 5–8):
+
+```
+PUSH {R11, R12, LR, PC}       ; save context
+SUB    R11, R12, #4           ; compute exit address
+SUB    SP, SP, #0xA00         ; 0xA00-byte IPC struct
+STR    R0, [SP]               ; [SP+0] = service ID 6 (fan)
+BL     health_ipc_call(SP, SP+500)
+LDR    R0, [SP, #0x500]       ; read result
+LDMDB  R11, {R11, SP, PC}     ; exit
+```
+
+The `health_ipc_call` target (0x3e420) is reached via the function-pointer
+lookup in the three-layer dispatch system. No direct BL to 0x3e420 exists
+in the 2.80 ELF for this path. (A parallel trampoline path exists for
+service IDs 291–315 but is unrelated to the probe's fan query.)
+
+### Integration with V4 block
+
+To integrate the probe into the V4 fan-block:
+
+1. Assemble `probe_readonly.S` to machine code with a cross-ARM assembler
+   targeting ARM32 (THUMB/ARM mode matching 2.80 Health code).
+2. Append the probe bytes to `fan_block_v4.bin` after the existing
+   15-function closure.
+3. Re-encode all LDR-literal sites in the probe using the same
+   cross-chunk re-encoding pass used for the 15-function closure.
+4. Recompute the VirtRange entry 63 to account for the added bytes.
+5. SHA1-verify the result against the new hash.
+
+**Warning**: this probe has NOT been hardware-tested. It inherits all
+the risks of the V4 block (unreachable code at 0xe915e8, deleted
+string-table references) and adds its own risk (the health_ipc_call
+call path has not been traced through the actual Health-side
+implementation to confirm the response format matches expectations).
+
+### Building the probe
+
+To build standalone:
+
+```bash
+# Using arm-none-eabi-as (GNU ARM cross-assembler):
+arm-none-eabi-as -mcpu=arm926ej-s -mthumb-interwork -o probe_readonly.o probe_readonly.S
+arm-none-eabi-objcopy -O binary probe_readonly.o probe_readonly.bin
+```
+
+The resulting binary contains the probe code plus the health_ipc_call
+trampoline and the command string, ready to be appended to the V4 block.
+
+### What this does NOT prove
+
+- The health side actually processes the `"t\0"` command and returns
+  valid data (the Health-side service-ID switch was removed in 2.78)
+- The response format matches what this probe expects in R0
+- The probe's own dependency closure is complete (the health_ipc_call
+  plumbing may have callees not in the current closure)
+- Any runtime behavior of the probe on real hardware
