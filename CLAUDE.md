@@ -53,3 +53,21 @@ user this checklist when asking them to flash it:
 Include this (or a pointer to it) in every new diagnostic/patch readme's
 own "how to verify" section, rather than leaving the user to infer it
 from "did the error appear or not."
+
+## Project Knowledge Graph
+
+An interactive SVG knowledge graph maps the full patch pipeline, tooling
+layer, and all research papers: open `research/img/graphify.html` in a
+browser. It shows:
+
+- **8 firmware bases** (2.50–2.82) → 5 decomposed artifacts each
+- **13 patch builds** — 8 diagnostics that bricked (diag1-9), 3 legacy
+  tool-access patches (277/278/279), 4 modern backdoored builds
+  (280-tools, 281-tools, 282-tools, v4 fan-restore)
+- **Safe build**: `patches/280-fan-restore-v4` (the only VirtRange-modifying
+  build that preserves the ceiling entry and passes adversarial review)
+- **Research**: 10 papers tracing the evolution from 2022 findings through
+  literal-pointer relocation, integrity audit, VirtRange re-attribution,
+  and V4 adversarial review
+
+See also [MEMORY.md](MEMORY.md) for the memory index future sessions load.

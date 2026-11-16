@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ilo4_unlock — Knowledge Graph</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1117;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: auto;
+    min-width: 1400px;
+  }
+  svg { display: block; }
+  text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  .node-rect { rx: 8; ry: 8; }
+  .link { fill: none; stroke-width: 1.8; }
+  .dim { opacity: 0.45; }
+  label {
+    position: fixed; top: 12px; left: 16px;
+    color: #8b949e; font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+  }
+  label a { color: #58a6ff; text-decoration: none; }
+</style>
+</head>
+<body>
+<label><a href="#">ilo4_unlock</a> — Knowledge Graph</label>
+<svg id="g" width="1520" height="1820"></svg>
+<script>
+const W = 1520, H = 1820;
+const svg = document.getElementById('g');
+
+// ── Color palette ──────────────────────────────────────────
+const FILL = {
+  firmware: '#1a3a5c',      // dark blue
+  extract:  '#1b4f3e',      // green
+  patch:    '#4a3728',      // brown
+  tool:     '#3b3b5c',      // purple-grey
+  output:   '#2a4a3a',      // teal-green
+  research: '#3d2b4a',      // deep purple
+  script:   '#2c4a4a',      // teal
+};
+const STROKE = { firmware: '#3b82f6', extract: '#22c55e', patch: '#d97706', tool: '#a78bfa', output: '#34d399', research: '#c084fc', script: '#5eeed0' };
+const TXT = { firmware: '#93c5fd', extract: '#86efac', patch: '#fcd34d', tool: '#d4b5fd', output: '#6ee7b7', research: '#e9d5ff', script: '#a5f3c4' };
+
+function fmt(s) { return s.replace(/[-_]/g,' ').replace(/\b\w/g, c => c.toUpperCase()); }
+
+// ── Nodes ──────────────────────────────────────────────────
+const nodes = [
+  // ─ LAYER 0: INPUT (firmware binaries) ─
+  { id: 'fw_250',   label: 'iLO 2.50',   layer: 0,  cat: 'firmware' },
+  { id: 'fw_273',   label: 'iLO 2.73',   layer: 0,  cat: 'firmware' },
+  { id: 'fw_277',   label: 'iLO 2.77',   layer: 0,  cat: 'firmware' },
+  { id: 'fw_278',   label: 'iLO 2.78',   layer: 0,  cat: 'firmware' },
+  { id: 'fw_279',   label: 'iLO 2.79',   layer: 0,  cat: 'firmware' },
+  { id: 'fw_280',   label: 'iLO 2.80',   layer: 0,  cat: 'firmware' },
+  { id: 'fw_281',   label: 'iLO 2.81',   layer: 0,  cat: 'firmware' },
+  { id: 'fw_282',   label: 'iLO 2.82',   layer: 0,  cat: 'firmware' },
+
+  // ─ LAYER 1: EXTRACTION ─
+  { id: 'extract',  label: 'Extract',    layer: 1,  cat: 'extract' },
+  { id: 'bl',       label: 'bootloader.bin', layer: 1, cat: 'extract' },
+  { id: 'km',       label: 'kernel_main.bin', layer: 1, cat: 'extract' },
+  { id: 'elf',      label: 'elf.bin',    layer: 1,  cat: 'extract' },
+  { id: 'fw',       label: 'firmware.bin', layer: 1, cat: 'extract' },
+  { id: 'map',      label: 'firmware.map', layer: 1, cat: 'extract' },
+
+  // ─ LAYER 2: SIG-BYPASS PATCHES (shared by all modern builds) ─
+  { id: 'sig_bl',   label: 'Bootloader\nSig-Bypass', layer: 2, cat: 'patch' },
+  { id: 'sig_km',   label: 'Kernel\nSig-Bypass',   layer: 2, cat: 'patch' },
+
+  // ─ LAYER 2.5: PATCH TYPES ─
+  { id: 'tp_user',  label: 'Userland\n(Patch JSON)', layer: 2.5, cat: 'patch' },
+  { id: 'tp_diag',  label: 'ELF Diag\nPatcher', layer: 2.5, cat: 'script' },
+  { id: 'tp_fan',   label: 'Fan\nRestore', layer: 2.5, cat: 'script' },
+
+  // ─ LAYER 3: SPECIFIC PATCHES ─
+  { id: 'p277',      label: '277\n(TOOLS+)',     layer: 3,  cat: 'patch' },
+  { id: 'p277tools', label: '277-tools',         layer: 3,  cat: 'patch' },
+  { id: 'p277mem',   label: '277-memdump',       layer: 3,  cat: 'patch' },
+  { id: 'p278',      label: '278',               layer: 3,  cat: 'patch' },
+  { id: 'p279',      label: '279',               layer: 3,  cat: 'patch' },
+  { id: 'p280diag',  label: '280-diag1..9',      layer: 3,  cat: 'script' },
+  { id: 'p280fan',   label: '280-fan',           layer: 3,  cat: 'script' },
+  { id: 'p280tools', label: '280-tools',          layer: 3,  cat: 'patch' },
+  { id: 'p281',      label: '281',               layer: 3,  cat: 'patch' },
+  { id: 'p281tools', label: '281-tools',          layer: 3,  cat: 'patch' },
+  { id: 'p282',      label: '282',               layer: 3,  cat: 'patch' },
+  { id: 'p282tools', label: '282-tools',          layer: 3,  cat: 'patch' },
+  { id: 'p280fanv4', label: '280-fan-restore-v4\n✓ SAFE', layer: 3, cat: 'script' },
+
+  // ─ LAYER 4: REPACK ─
+  { id: 'repack',   label: 'ilo4_repack.py',     layer: 4, cat: 'tool' },
+  { id: 'docker',   label: 'Docker\npython:2.7', layer: 4, cat: 'tool' },
+
+  // ─ LAYER 5: OUTPUT ─
+  { id: 'roundtrip',label: 'Roundtrip\nVerify',  layer: 5, cat: 'tool' },
+  { id: 'out',      label: '.toflash\nFirmware', layer: 5, cat: 'output' },
+
+  // ─ LAYER 6: TOOLS & INFRA ─
+  { id: 'buildsh',  label: 'build.sh',           layer: 6, cat: 'script' },
+  { id: 'pkgbuild', label: 'package_build.sh',   layer: 6, cat: 'script' },
+  { id: 'jsonpatch',label: 'apply_json_patch.py', layer: 6, cat: 'tool' },
+  { id: 'patchpy',  label: 'patch.py',           layer: 6, cat: 'tool' },
+  { id: 'ilo4tbx',  label: 'ilo4_toolbox\n(Airbus SecLab)', layer: 6, cat: 'tool' },
+
+  // ─ LAYER 7: RESEARCH ─
+  { id: 'r_v4review', label: 'V4 Adversarial\nReview', layer: 7, cat: 'research' },
+  { id: 'r_integrity', label: 'Integrity\nCheck Audit', layer: 7, cat: 'research' },
+  { id: 'r_virtrange', label: 'VirtRange\nRe-attribution', layer: 7, cat: 'research' },
+  { id: 'r_v4status', label: 'V4 Literal\nPointer Fix', layer: 7, cat: 'research' },
+  { id: 'r_fan_v3',  label: 'Fan Restore\nV1-V3\n(Postmortem)', layer: 7, cat: 'research' },
+  { id: 'r_lit_reloc', label: 'Literal\nPointer Reloc', layer: 7, cat: 'research' },
+  { id: 'r_v3closure', label: 'V3 Closure\nRederivation', layer: 7, cat: 'research' },
+  { id: 'r_fan_method', label: 'Kernel Re\nMethodology', layer: 7, cat: 'research' },
+  { id: 'r_doc_audit', label: 'Documentation\nAudit', layer: 7, cat: 'research' },
+  { id: 'r_hist',    label: '2022 Research\n(History)', layer: 7, cat: 'research' },
+];
+
+// ── Edges ─────────────────────────────────────────────────
+const edges = [
+  // Layer 0 → 1: Each firmware goes through extraction
+  ['fw_250','extract'], ['fw_273','extract'], ['fw_277','extract'], ['fw_278','extract'],
+  ['fw_279','extract'], ['fw_280','extract'], ['fw_281','extract'], ['fw_282','extract'],
+
+  // Extract → artifacts
+  ['extract','bl'], ['extract','km'], ['extract','elf'], ['extract','fw'], ['extract','map'],
+
+  // Sig-bypass patches
+  ['bl','sig_bl'], ['km','sig_km'],
+  ['sig_bl','p280fanv4'], ['sig_km','p280fanv4'],
+  ['sig_bl','p280diag'], ['sig_km','p280diag'],
+  ['sig_bl','p280fan'], ['sig_km','p280fan'],
+  ['sig_bl','p280tools'], ['sig_km','p280tools'],
+  ['bl','p277'], ['km','p277'],
+  ['bl','p277tools'], ['km','p277tools'],
+  ['bl','p277mem'], ['km','p277mem'],
+  ['bl','p278'], ['km','p278'],
+  ['bl','p279'], ['km','p279'],
+  ['bl','p281'], ['km','p281'],
+  ['bl','p281tools'], ['km','p281tools'],
+  ['bl','p282'], ['km','p282'],
+  ['bl','p282tools'], ['km','p282tools'],
+
+  // Userland / ELF-level patches
+  ['elf','tp_user'], ['elf','tp_diag'], ['elf','tp_fan'],
+  ['tp_user','p277'], ['tp_user','p277tools'], ['tp_user','p277mem'],
+  ['tp_user','p278'], ['tp_user','p279'], ['tp_user','p280tools'],
+  ['tp_user','p281'], ['tp_user','p281tools'], ['tp_user','p282'], ['tp_user','p282tools'],
+  ['tp_diag','p280diag'],
+  ['tp_fan','p280fan'], ['tp_fan','p280fanv4'],
+
+  // All patched artifacts → repack
+  ['p277','repack'], ['p277tools','repack'], ['p277mem','repack'],
+  ['p278','repack'], ['p279','repack'],
+  ['p280diag','repack'], ['p280fan','repack'], ['p280fanv4','repack'],
+  ['p280tools','repack'], ['p281','repack'], ['p281tools','repack'],
+  ['p282','repack'], ['p282tools','repack'],
+
+  // Repack flow
+  ['repack','docker'],
+  ['fw','repack'], ['map','repack'], ['elf','repack'],
+  ['km','repack'], ['bl','repack'],
+
+  // Repack → verification → output
+  ['repack','roundtrip'], ['roundtrip','out'],
+
+  // Tools layer
+  ['buildsh','p277'], ['buildsh','p278'], ['buildsh','p279'],
+  ['buildsh','p280fanv4'], ['buildsh','p280diag'],
+  ['buildsh','p277tools'], ['buildsh','p277mem'],
+  ['buildsh','p278'], ['buildsh','p279'],
+  ['buildsh','p280tools'], ['buildsh','p281'], ['buildsh','p281tools'],
+  ['buildsh','p282'], ['buildsh','p282tools'],
+  ['pkgbuild','p280diag'], ['pkgbuild','p280fan'], ['pkgbuild','p280fanv4'],
+  ['jsonpatch','sig_bl'], ['jsonpatch','sig_km'],
+  ['patchpy','p277'], ['patchpy','p278'], ['patchpy','p279'],
+  ['patchpy','p280tools'], ['patchpy','p281'], ['patchpy','p282'],
+  ['ilo4tbx','repack'],
+
+  // Research → builds they reference
+  ['r_v4review','p280fanv4'],
+  ['r_integrity','p280diag'],
+  ['r_virtrange','p280diag'],
+  ['r_v4status','p280fanv4'],
+  ['r_fan_v3','p280fan'],
+  ['r_lit_reloc','p280fanv4'],
+  ['r_v3closure','p280fan'],
+  ['r_fan_method','p280fan'],
+  ['r_doc_audit','p280diag'],
+  ['r_hist','p277'], ['r_hist','p278'],
+];
+
+// ── Layout ─────────────────────────────────────────────────
+const LAYER_Y = { 0: 70, 1: 280, 2: 470, 2.5: 660, 3: 860, 4: 1100, 5: 1320, 6: 1520, 7: 1720 };
+const NODE_W = 110, NODE_H = 56;
+
+function layout() {
+  // Group nodes by layer, compute x positions
+  const layers = {};
+  nodes.forEach(n => {
+    const y = LAYER_Y[n.layer] || 900;
+    n.y = y;
+    if (!layers[n.layer]) layers[n.layer] = [];
+    layers[n.layer].push(n);
+  });
+
+  Object.keys(layers).forEach(l => {
+    const group = layers[l];
+    const totalW = group.length * (NODE_W + 18) - 18;
+    const startX = (W - totalW) / 2 + NODE_W / 2;
+    group.forEach((n, i) => { n.x = startX + i * (NODE_W + 18); });
+  });
+}
+
+// ── Render ─────────────────────────────────────────────────
+function render() {
+  layout();
+
+  // Defs for gradients & glow
+  let defs = `<defs>
+    <filter id="glow"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="glow-green"><feGaussianBlur stdDeviation="4" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6" fill="#484e6a"/></marker>
+  </defs>`;
+
+  // Layer labels
+  const layerLabels = {
+    0: 'Genuine HP Firmware Binaries (scexe)',
+    1: 'Decomposed Artifacts',
+    2: 'Sig-Bypass Patches (JSON)',
+    '2.5': 'ELF-Level Patch Scripts',
+    3: 'Build Patches',
+    4: 'Repack (ilo4_repack.py)',
+    5: 'Verification → Output',
+    6: 'Tooling & Infrastructure',
+    7: 'Research Notes',
+  };
+
+  let layerEls = '';
+  Object.entries(layerLabels).forEach(([l, label]) => {
+    const y = LAYER_Y[l] || 900;
+    layerEls += `<text x="14" y="${y - 14}" fill="#3d4454" font-size="11" font-weight="600" letter-spacing="1.5">${label.toUpperCase()}</text>`;
+    layerEls += `<line x1="10" y1="${y + 18}" x2="${W - 10}" y2="${y + 18}" stroke="#1a1e2e" stroke-width="1" stroke-dasharray="6 4"/>`;
+  });
+
+  // Edges
+  let edgeEls = '';
+  edges.forEach(([from, to]) => {
+    const fn = nodes.find(n => n.id === from);
+    const tn = nodes.find(n => n.id === to);
+    if (!fn || !tn) return;
+    const isResearch = fn.cat === 'research';
+    const cls = isResearch ? 'link dim' : 'link';
+    const strokeCol = isResearch ? '#6b4f70' : '#2f3549';
+    edgeEls += `<line x1="${fn.x}" y1="${fn.y}" x2="${tn.x}" y2="${tn.y}" class="${cls}" stroke="${isResearch ? '#4a3f5a' : '#3a4054'}" stroke-dasharray="${isResearch ? '4 4' : 'none'}" marker-end="url(#arrow)"/>`;
+  });
+
+  // Nodes
+  let nodeEls = '';
+  nodes.forEach(n => {
+    const x = n.x - NODE_W / 2;
+    const y = n.y - 26;
+    const fill = FILL[n.cat] || '#1a1e2e';
+    const stroke = STROKE[n.cat] || '#3a3f54';
+    const txt = TXT[n.cat] || '#8b949e';
+    const lines = n.label.split('\n');
+    const lineH = 13;
+    const baseY = n.y - (lines.length * lineH) / 2 + lineH / 2;
+
+    // Glow for safe build
+    const glow = n.id === 'p280fanv4' ? ' filter="url(#glow-green)"' : '';
+    const label_attr = n.id === 'p280fanv4' ? ' font-weight="700"' : '';
+
+    let labelEl = '';
+    lines.forEach((line, i) => {
+      const fy = baseY + i * lineH;
+      labelEl += `<text x="${n.x}" y="${fy}" text-anchor="middle" dominant-baseline="central" fill="${txt}" font-size="${n.layer <= 2 ? 12 : 11}"${label_attr}>${line}</text>`;
+    });
+
+    // Layer dot indicator
+    const dotColors = { firmware: '#3b82f6', extract: '#22c55e', patch: '#d97706', tool: '#a78bfa', output: '#34d399', research: '#c084fc', script: '#5eead0' };
+    const dotColor = dotColors[n.cat] || '#555';
+
+    nodeEls += `
+      <g${glow}>
+        <rect x="${x}" y="${y}" width="${NODE_W}" height="${56}" fill="${fill}" stroke="${stroke}" stroke-width="1.5" class="node-rect"/>
+        <circle cx="${x + 5}" cy="${y + 10}" r="3" fill="${dotColor}" opacity="0.7"/>
+        ${labelEl}
+      </g>`;
+  });
+
+  // Legend
+  const legendY = 14;
+  const dotColors = { firmware: '#3b82f6', extract: '#22c55e', patch: '#d97706', tool: '#a78bfa', output: '#34d399', research: '#c084fc', script: '#5eead0' };
+  const dotNames = { firmware: 'Firmware', extract: 'Extracted', patch: 'Patch JSON', tool: 'Tool', output: 'Output', research: 'Research', script: 'Script' };
+  let legendEls = '';
+  let lx = W - 280;
+  Object.entries(dotNames).forEach(([k, name]) => {
+    legendEls += `<circle cx="${lx}" cy="${legendY}" r="4" fill="${dotColors[k]}" opacity="0.7"/><text x="${lx + 8}" y="${legendY + 3}" fill="#6b7280" font-size="10">${name}</text>`;
+    lx += 75;
+  });
+
+  // Title
+  const titleEl = `<text x="${W / 2}" y="28" text-anchor="middle" fill="#c9d1d9" font-size="16" font-weight="600" letter-spacing="0.5">ilo4_unlock — Patch Pipeline &amp; Research Graph</text>`;
+
+  // Build full SVG
+  svg.innerHTML = `
+    <g>${layerEls}</g>
+    <g>${edgeEls}</g>
+    <g>${nodeEls}</g>
+    <g>${titleEl}</g>
+    <g>${legendEls}</g>
+  `;
+}
+
+render();
+</script>
+</body>
+</html>
