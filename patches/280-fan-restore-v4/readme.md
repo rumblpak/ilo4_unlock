@@ -121,3 +121,47 @@ this. Specific new residual risk:
 
 Result hash (`firmware.bin.backdoored.toflash`), this build:
 `f033cd582b6ac5563ec50ef8c4fa528240e25c4a` (SHA1).
+
+## Service-ID Dispatch (issue #20)
+
+A full-scan of the 24MB 2.80 ELF revealed a **three-layer dispatch system**
+for ConAppCLI→Health IPC calls:
+
+| Layer | Address | Role |
+|---|---|---|
+| Entry Wrapper | file offset 0x4E74 | MOV R0, #N; B common → selects service ID |
+| health_ipc_call | 0x3e420 (0x10828) | IPC stub, packages (SP, SP+0x500) |
+| Handler table | ~0x5a700 | Function-pointer dispatch table |
+
+**No direct BL calls to `health_ipc_call` (0x3e420) exist in the ELF.**
+All invocations route through the Entry Wrapper → dispatcher → handler-table
+path. The Entry Wrapper pattern appears ~1570× for health (MOV R0, #5) and
+~1415× for fan (MOV R0, #6).
+
+### Calling convention (fn_handler.S, 2.77 firmware)
+
+The ConAppCLI-side handler calling convention is documented in
+`patches/277/asm/fn_handler.S`:
+
+```
+PUSH {R11, R12, LR, PC}       ; save context
+SUB    R11, R12, #4           ; compute exit address
+SUB    SP, SP, #0xA00         ; 0xA00-byte IPC struct
+STR    R0, [SP]               ; service ID at [SP+0]
+ADD    R0, R7, #0x1000        ; input string pointer
+--- parse string char-by-char ---
+MOV    R0, SP                 ; arg1
+ADD    R1, SP, #0x500         ; arg2
+BL     0x3e420                ; health_ipc_call(SP, SP+500)
+LDR    R0, [SP, #0x500]       ; read result
+LDMDB  R11, {R11, SP, PC}     ; exit
+```
+
+Any probe code placed in the V4 block would need to replicate this calling
+convention to invoke existing handlers, since no direct BL to 0x3e420
+exists in the ELF.
+
+**Parameter layout** (0xA00 bytes at SP):
+- `[SP+0]`: service ID (5=health, 6=fan, 7=ocsd, 8=ocbb)
+- `[SP+4]`: input string (space-stripped, from R7+0x1000)
+- `[SP+0x500]`: result area (output from health_ipc_call)
