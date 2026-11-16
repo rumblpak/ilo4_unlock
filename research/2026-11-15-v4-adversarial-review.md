@@ -151,8 +151,15 @@ all service-ID invocations through a single dispatcher.
 **No direct BL calls to health_ipc_call (0x3e420) were found anywhere
 in the 24MB ELF.** This is a critical finding: the dispatch mechanism
 uses the Entry Wrapper wrapper-to-dispatcher path rather than direct
-BL calls. The dispatcher likely uses the function-pointer table to
-select the right handler implementation.
+BL calls for service IDs 5–8 (health, fan, ocsd, ocbb). The dispatcher
+likely uses the function-pointer table to select the right handler
+implementation.
+
+**Caveat**: A parallel dispatch mechanism exists for service IDs 291–315
+(T1–T4 trampolines at 0x22878/0x4A970/0x6715C/0x83840) that uses direct
+BL calls to handler addresses. These handle a separate class of internal
+Health services (likely NVDIMM/thermal management) and are not part of
+the ConAppCLI-side three-layer system.
 
 ### B. Fan Trampoline Calling Convention (fn_handler.S)
 
@@ -225,6 +232,94 @@ route through this same handler-dispatch path** — there is no direct
 BL to 0x3e420 available in the ELF. The probe would need to either:
 - replicate the fn_handler.S calling convention
 - call through the handler function-pointer table
+
+### D. Four Dispatch Trampolines (T1–T4) & Custom ARM Encoding
+
+A deeper examination of `elf.bin` reveals **four dispatcher trampolines**
+at file offsets 0x22878, 0x4A970, 0x6715C, and 0x83840. These implement
+a **second dispatch layer** parallel to the three-layer Entry Wrapper
+system described above, and use a **custom ARM instruction encoding**.
+
+#### Custom ARM Encoding
+
+The firmware uses a non-standard encoding for `MOV Rd, #imm12`:
+
+| Encoding | Bits 23-20 | Meaning |
+|---|---|---|
+| `0xE380xxxx` | `1000` | Standard ARM MOV imm12 |
+| `0xE3A0xxxx` | `1010` | **Firmware custom MOV imm12** |
+
+The only difference is bits 23-20 remapped from `1000` → `1010`. All other
+dispatcher instructions (MOV PC, Rn at `0xE1A0xx0D`; LDM IA Rn at
+`0xE91Bxxxxx`; BL at `0xEBxxxxxx`) use **standard ARM encoding**.
+
+Instruction data is stored in **little-endian** byte order within the ELF
+file (consistent with standard ARM LE encoding).
+
+#### Dispatcher Structure
+
+Each trampoline entry follows a common pattern:
+
+```
+BL setup offset          ; BL to setup code (EBxxxxxx)
+MOV R0, #0               ; Reset R0
+LDM IA R11, {regs}       ; Save/restore registers
+MOV PC, R0               ; Return to caller
+```
+
+The LDM IA register list **varies per dispatcher entry**, suggesting each
+trampoline handles a different class of callers:
+
+| Trampoline | Offset | LDM IA Register List |
+|---|---|---|
+| **T1** | 0x22878 | `{R5, R11, R13, R15}` (3 entries) + `{R5, R6, R7, R11, R13, R15}` (error path) |
+| **T2** | 0x4A970 | `{R5-R11, R13, R15}` (full 9-reg save) + `{R11, R13, R15}` (minimal) |
+| **T3** | 0x6715C | `{R5, R6, R8, R9, R11, R13, R15}` (7-reg save) |
+| **T4** | 0x83840 | Dispatch table with embedded handler addresses |
+
+#### T4 Dispatch Table (Service-ID-Based)
+
+T4 contains a 32-byte-per-entry dispatch table. Entries 0–3 carry embedded
+handler addresses; entry 4 holds error text:
+
+| Entry | Service ID | Handler Address |
+|---|---|---|
+| 0 | 0x13B (315) | 0xE28F1F49 |
+| 1 | 0x133 (307) | 0xE28F1F79 |
+| 2 | 0x12B (301) | 0xE28F1FA6 |
+| 3 | 0x123 (291) | 0xE28F1FD3 |
+| 4 | — | Error text: *"NVDIMM Error - Charge Error (%s %u, Memory Module %u%s). Inc"* |
+
+Service IDs decrease by 8 (315 → 307 → 301 → 291), suggesting related
+services in a common family. Handler addresses share the prefix `0xE28F1F`
+with varying last byte — these are in the **Health partition memory space**
+(very high addresses, consistent with the 0x10000 bias applied to task-local
+addresses).
+
+The T4 service IDs (291–315) fall in a range **separate from** the table
+entries 0–15 (IDs 0–15), indicating a different dispatch category not
+covered by the handler function-pointer table at file offset 0x4CED8.
+
+#### Error Text Analysis
+
+Entry 4's error string (`"NVDIMM Error - Charge Error (%s %u, Memory Module %u%s). Inc"`)
+confirms this trampoline handles a **fallback/error dispatch path** for
+NVDIMM-related services. This is consistent with the pattern of using
+specialized trampolines for specific service families.
+
+#### Relationship to Three-Layer System
+
+The T1–T4 trampolines are a **parallel dispatch mechanism** to the three-layer
+Entry Wrapper system:
+
+- **Three-layer system**: Entry Wrapper → health_ipc_call → handler table
+  for service IDs 5–8 (health, fan, ocsd, ocbb)
+- **Trampoline system**: Direct-to-handler dispatch for service IDs 291–315
+  (likely internal Health services, possibly NVDIMM or thermal management)
+
+The two systems may coexist: the three-layer system handles ConAppCLI-side
+calls (from the CLI shell), while the trampolines handle internal Health
+partition calls (from other RTOS tasks or interrupt contexts).
 
 ## Assessment for Hardware Flashing
 

@@ -110,6 +110,8 @@ const nodes = [
   { id: 'r_integrity', label: 'Integrity\nCheck Audit', layer: 7, cat: 'research' },
   { id: 'r_virtrange', label: 'VirtRange\nRe-attribution', layer: 7, cat: 'research' },
   { id: 'r_v4status', label: 'V4 Literal\nPointer Fix', layer: 7, cat: 'research' },
+  { id: 'r_entry2',  label: 'Entry 2 Literal\nTable\n(9-hit BSS)', layer: 7, cat: 'research' },
+  { id: 'r_dispatch', label: 'Service-ID\nDispatch\n& Trampolines', layer: 7, cat: 'research' },
   { id: 'r_fan_v3',  label: 'Fan Restore\nV1-V3\n(Postmortem)', layer: 7, cat: 'research' },
   { id: 'r_lit_reloc', label: 'Literal\nPointer Reloc', layer: 7, cat: 'research' },
   { id: 'r_v3closure', label: 'V3 Closure\nRederivation', layer: 7, cat: 'research' },
@@ -179,11 +181,15 @@ const edges = [
   ['patchpy','p280tools'], ['patchpy','p281'], ['patchpy','p282'],
   ['ilo4tbx','repack'],
 
-  // Research → builds they reference
+  // Research → builds/papers they reference
   ['r_v4review','p280fanv4'],
+  ['r_v4review','elf'],
   ['r_integrity','p280diag'],
   ['r_virtrange','p280diag'],
   ['r_v4status','p280fanv4'],
+  ['r_entry2','elf'],
+  ['r_dispatch','elf'],
+  ['r_dispatch','p280diag'],
   ['r_fan_v3','p280fan'],
   ['r_lit_reloc','p280fanv4'],
   ['r_v3closure','p280fan'],

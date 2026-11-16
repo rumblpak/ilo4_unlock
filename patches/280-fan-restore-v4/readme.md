@@ -124,8 +124,12 @@ Result hash (`firmware.bin.backdoored.toflash`), this build:
 
 ## Service-ID Dispatch (issue #20)
 
-A full-scan of the 24MB 2.80 ELF revealed a **three-layer dispatch system**
-for ConAppCLI→Health IPC calls:
+A full-scan of the 24MB 2.80 ELF revealed **two independent dispatch
+mechanisms** that coexist:
+
+### Three-layer system (service IDs 5–8)
+
+ConAppCLI→Health IPC calls use a three-layer dispatch:
 
 | Layer | Address | Role |
 |---|---|---|
@@ -134,9 +138,26 @@ for ConAppCLI→Health IPC calls:
 | Handler table | ~0x5a700 | Function-pointer dispatch table |
 
 **No direct BL calls to `health_ipc_call` (0x3e420) exist in the ELF.**
-All invocations route through the Entry Wrapper → dispatcher → handler-table
-path. The Entry Wrapper pattern appears ~1570× for health (MOV R0, #5) and
-~1415× for fan (MOV R0, #6).
+This path handles service IDs 5–8 (health, fan, ocsd, ocbb). The Entry
+Wrapper pattern appears ~1570× for health (MOV R0, #5) and ~1415× for fan
+(MOV R0, #6).
+
+### Trampoline dispatch (service IDs 291–315)
+
+A parallel mechanism exists for service IDs 291–315 via four dispatcher
+trampolines at file offsets 0x22878, 0x4A970, 0x6715C, and 0x83840. These
+use direct BL calls to handler addresses (in the 0xE28F1Fxx range) and
+handle a separate class of internal Health services (likely NVDIMM-related).
+
+This is **not** part of the ConAppCLI path — it handles internal Health task
+calls. See `research/2026-11-15-v4-adversarial-review.md#D` for full details.
+
+### Custom ARM encoding
+
+The firmware uses a **non-standard encoding** for `MOV Rd, #imm12`:
+`0xE3A0xxxx` (bits 23–20 = `1010`) instead of the standard `0xE380xxxx`
+(bits 23–20 = `1000`). All other dispatcher instructions use standard ARM
+encoding.
 
 ### Calling convention (fn_handler.S, 2.77 firmware)
 
@@ -159,7 +180,7 @@ LDMDB  R11, {R11, SP, PC}     ; exit
 
 Any probe code placed in the V4 block would need to replicate this calling
 convention to invoke existing handlers, since no direct BL to 0x3e420
-exists in the ELF.
+exists in the ELF (for the ConAppCLI path).
 
 **Parameter layout** (0xA00 bytes at SP):
 - `[SP+0]`: service ID (5=health, 6=fan, 7=ocsd, 8=ocbb)
@@ -182,7 +203,8 @@ any existing Health code. It is purely a read-only status probe.
 
 ### Calling path
 
-The probe follows the fn_handler.S calling convention:
+The probe follows the fn_handler.S calling convention (the ConAppCLI-side
+path, service IDs 5–8):
 
 ```
 PUSH {R11, R12, LR, PC}       ; save context
@@ -195,8 +217,9 @@ LDMDB  R11, {R11, SP, PC}     ; exit
 ```
 
 The `health_ipc_call` target (0x3e420) is reached via the function-pointer
-lookup pattern (`LDR R12, =literal; BX R12`) because no direct BL to
-0x3e420 exists in the 2.80 ELF.
+lookup in the three-layer dispatch system. No direct BL to 0x3e420 exists
+in the 2.80 ELF for this path. (A parallel trampoline path exists for
+service IDs 291–315 but is unrelated to the probe's fan query.)
 
 ### Integration with V4 block
 
