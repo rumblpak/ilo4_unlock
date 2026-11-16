@@ -125,6 +125,107 @@ into that space — the same region the kernel already maps.
 - HPESBHF04134 security risk (restoring code that may have motivated HPE's
   2.78 security fix)
 
+## Issue #20: Service-ID Dispatch & Calling Convention
+
+### A. Service-ID Dispatch Switch — Three-Layer System
+
+A search of the entire 24MB 2.80 ELF (`build_extract/elf.bin`) for the
+MOV R0, #N followed by B dispatch pattern (where N=5 health, 6=fan,
+7=ocsd, 8=ocbb) reveals a **three-layer dispatch system**:
+
+1. **Entry Wrapper** at file offset 0x4E74 — selects the service ID
+   and jumps to a common dispatcher block
+2. **health_ipc_call** at address 0x3e420 (file offset 0x10828) —
+   the IPC stub that packages the service-ID call into the ConAppCLI
+   protocol
+3. **Handler function-pointer table** at approximately 0x5a700–0x5b000
+   — a lookup table the common dispatcher consults to select the actual
+   handler implementation
+
+The Entry Wrapper dispatch pattern was confirmed throughout the ELF:
+~1570 instances of `MOV R0, #5` and ~1415 of `MOV R0, #6`, each
+followed by a branch (`B`) to a common handler prologue. This pattern
+is not direct BL calls; it is a selective-entry wrapper that funnels
+all service-ID invocations through a single dispatcher.
+
+**No direct BL calls to health_ipc_call (0x3e420) were found anywhere
+in the 24MB ELF.** This is a critical finding: the dispatch mechanism
+uses the Entry Wrapper wrapper-to-dispatcher path rather than direct
+BL calls. The dispatcher likely uses the function-pointer table to
+select the right handler implementation.
+
+### B. Fan Trampoline Calling Convention (fn_handler.S)
+
+The calling convention for the ConAppCLI-side handler code is documented
+in `fn_handler.S` from the 2.77 firmware. The complete sequence is:
+
+```asm
+h:
+    MOV    r0, #5        ; service-ID dispatch selector (5=health)
+    B      start
+fan:
+    MOV    r0, #6        ; service-ID dispatch selector (6=fan)
+    B      start
+ocsd:
+    MOV    r0, #7        ; service-ID dispatch selector (7=ocsd)
+    B      start
+ocbb:
+    MOV    r0, #8        ; service-ID dispatch selector (8=ocbb)
+    B      start
+
+start:
+    MOV    R12, SP
+    PUSH   {R11, R12, LR, PC}            ; save context, push LR+PC
+    SUB    R11, R12, #4                  ; compute exit address
+    SUB    SP, SP, #0xA00                ; 0xA00-byte IPC struct
+    STR    R0, [SP]                      ; store service ID at [SP+0]
+    MOV    R3, #0
+    ADD    R2, SP, #4                    ; string output buffer at [SP+4]
+    ADD    R0, R7, #0x1000               ; input string pointer (0x1000+...)
+loop:
+    LDRB   R1, [R0], #1                  ; load char, advance R0
+    CMP    R1, #0x20                     ; space?
+    STRBEQ R3, [R2],#1                   ; yes → \0, advance R2
+    STRBNE R1, [R2],#1                   ; no  → copy char, advance R2
+    CMP    R1, #0                        ; end of string?
+    BNE    loop                          ; keep parsing
+    STRB   R3, [SP, #0x500]              ; store \0 at result area
+    MOV    R0, SP                        ; arg1 = input struct (R0)
+    ADD    R1, SP, #0x500                ; arg2 = result area (R1)
+    BL     0x3e420                       ; health_ipc_call(SP, SP+500)
+    LDR    R0, [SP, #0x500]              ; load return value to R0
+    LDMDB  R11, {R11, SP, PC}            ; exit
+```
+
+**Parameter layout** (0xA00-byte IPC struct at SP):
+- `[SP+0]`: service ID (5=health, 6=fan, 7=ocsd, 8=ocbb)
+- `[SP+4]`: input string (padded from R7+0x1000, space-stripped)
+- `[SP+0x500]`: result area (output from health_ipc_call)
+
+**Calling convention**:
+1. `health_ipc_call(SP, SP+0x500)` — two-pointer call
+2. R0 = input struct pointer (SP), R1 = result struct pointer (SP+0x500)
+3. Result returns to R0 after BL
+
+**Critical for V4 fan-block placement**: If the V4 block needs to
+invoke existing handlers via the same path, it must push context
+(`PUSH {R11,R12,LR,PC}`), compute R11, allocate 0xA00 bytes, and
+call `health_ipc_call(SP, SP+0x500)`.
+
+### C. Handler Code at 0x5715c
+
+Function pointer table dispatch found at file offset 0x5a700–0x5b000
+(solidified at the health address). This is the handler dispatch table
+that the Entry Wrapper's common dispatcher consults. The 0x5715c address
+holds handler code with extensive BL calls to other functions; code
+branches to the function-pointer table to select implementations.
+
+This confirms that **any probe code the V4 block places in Health must
+route through this same handler-dispatch path** — there is no direct
+BL to 0x3e420 available in the ELF. The probe would need to either:
+- replicate the fn_handler.S calling convention
+- call through the handler function-pointer table
+
 ## Assessment for Hardware Flashing
 
 **Recommendation: safe to flash.** V4 is the first VirtRange-modifying build
