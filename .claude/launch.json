@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "graphify",
+      "url": "file:///Users/rumblpak/git/github.com/rumblpak/ilo4_unlock/research/img/graphify.html",
+      "runtimeExecutable": "/usr/bin/open",
+      "runtimeArgs": ["-a", "Safari"],
+      "port": 0
+    }
+  ]
+}

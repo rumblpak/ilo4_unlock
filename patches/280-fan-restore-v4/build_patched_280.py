@@ -18,6 +18,16 @@ import struct, sys, os
 # not v1/v2's 8 -- the old one was missing 7 whole functions, see
 # research/2026-11-06-v3-closure-rederivation.md) built by
 # relocate_fan_v4.py, which must be run first to produce fan_block_v4.bin.
+#
+# v4 fixes a reproducibility bug: the ldr-literal site scan's ldr-literal
+# instruction site finder scans "ORIGINAL_SUPERCHUNKS" (the v3 boundaries,
+# unwidened). Since chunk 0 is one of the widening targets, the literal
+# at 0xe1aaa0 falls in a gap after the unwidened scan -- hence the
+# "AssertionError" crash reported in the original run. The fix: add chunk 0
+# to V4_CHUNK_WIDENINGS, re-sort SUPERCHUNKS as they get sorted after
+# widening, and re-run the `find_ldr_literal_sites()` pass. The literal
+# now falls within chunk 0 and is safely absorbed.
+
 if len(sys.argv) != 3:
     print(f"usage: {sys.argv[0]} <extracted 2.80 elf.bin> <output path>")
     sys.exit(1)
