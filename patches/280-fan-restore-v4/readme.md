@@ -165,3 +165,76 @@ exists in the ELF.
 - `[SP+0]`: service ID (5=health, 6=fan, 7=ocsd, 8=ocbb)
 - `[SP+4]`: input string (space-stripped, from R7+0x1000)
 - `[SP+0x500]`: result area (output from health_ipc_call)
+
+## Minimal Read-Only Probe (issue #20, step 3)
+
+A minimal read-only probe is provided in
+`patches/280-fan-restore-v4/probe_readonly.S`. It implements a
+12-function dependency closure that reads fan thermal status via
+`health_ipc_call` without modifying any hardware.
+
+### What it does
+
+The probe calls `health_ipc_call` with the fan service ID (6) and the
+command string `"t\0"` (fan thermal query). It does not write to any
+hardware registers, does not change fan speeds, and does not modify
+any existing Health code. It is purely a read-only status probe.
+
+### Calling path
+
+The probe follows the fn_handler.S calling convention:
+
+```
+PUSH {R11, R12, LR, PC}       ; save context
+SUB    R11, R12, #4           ; compute exit address
+SUB    SP, SP, #0xA00         ; 0xA00-byte IPC struct
+STR    R0, [SP]               ; [SP+0] = service ID 6 (fan)
+BL     health_ipc_call(SP, SP+500)
+LDR    R0, [SP, #0x500]       ; read result
+LDMDB  R11, {R11, SP, PC}     ; exit
+```
+
+The `health_ipc_call` target (0x3e420) is reached via the function-pointer
+lookup pattern (`LDR R12, =literal; BX R12`) because no direct BL to
+0x3e420 exists in the 2.80 ELF.
+
+### Integration with V4 block
+
+To integrate the probe into the V4 fan-block:
+
+1. Assemble `probe_readonly.S` to machine code with a cross-ARM assembler
+   targeting ARM32 (THUMB/ARM mode matching 2.80 Health code).
+2. Append the probe bytes to `fan_block_v4.bin` after the existing
+   15-function closure.
+3. Re-encode all LDR-literal sites in the probe using the same
+   cross-chunk re-encoding pass used for the 15-function closure.
+4. Recompute the VirtRange entry 63 to account for the added bytes.
+5. SHA1-verify the result against the new hash.
+
+**Warning**: this probe has NOT been hardware-tested. It inherits all
+the risks of the V4 block (unreachable code at 0xe915e8, deleted
+string-table references) and adds its own risk (the health_ipc_call
+call path has not been traced through the actual Health-side
+implementation to confirm the response format matches expectations).
+
+### Building the probe
+
+To build standalone:
+
+```bash
+# Using arm-none-eabi-as (GNU ARM cross-assembler):
+arm-none-eabi-as -mcpu=arm926ej-s -mthumb-interwork -o probe_readonly.o probe_readonly.S
+arm-none-eabi-objcopy -O binary probe_readonly.o probe_readonly.bin
+```
+
+The resulting binary contains the probe code plus the health_ipc_call
+trampoline and the command string, ready to be appended to the V4 block.
+
+### What this does NOT prove
+
+- The health side actually processes the `"t\0"` command and returns
+  valid data (the Health-side service-ID switch was removed in 2.78)
+- The response format matches what this probe expects in R0
+- The probe's own dependency closure is complete (the health_ipc_call
+  plumbing may have callees not in the current closure)
+- Any runtime behavior of the probe on real hardware
