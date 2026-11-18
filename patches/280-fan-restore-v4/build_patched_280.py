@@ -18,14 +18,14 @@ import struct, sys, os
 # not v1/v2's 8 -- the old one was missing 7 whole functions, see
 # research/2026-11-06-v3-closure-rederivation.md) built by
 # relocate_fan_v4.py, which must be run first to produce fan_block_v4.bin.
-if len(sys.argv) != 3:
-    print(f"usage: {sys.argv[0]} <extracted 2.80 elf.bin> <output path>")
+if len(sys.argv) != 4:
+    print(f"usage: {sys.argv[0]} <extracted 2.80 elf.bin> <fan_block_v4.bin> <output path>")
     sys.exit(1)
 
 IN_PATH = sys.argv[1]
-OUT_PATH = sys.argv[2]
+FAN_BLOCK_PATH = sys.argv[2]
+OUT_PATH = sys.argv[3]
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-FAN_BLOCK_PATH = os.path.join(SCRIPT_DIR, 'fan_block_v4.bin')
 
 data = bytearray(open(IN_PATH, 'rb').read())
 
