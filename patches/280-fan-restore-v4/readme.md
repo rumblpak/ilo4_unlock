@@ -109,15 +109,24 @@ this. Specific new residual risk:
 
 ## Build
 
-1. `python3 relocate_fan_v4.py <extracted 2.77 elf.bin> fan_block_v4.bin`
-   -- only needs to be re-run if the closure or target address changes;
-   `fan_block_v4.bin` is already checked in.
-2. `python3 build_patched_280.py <extracted 2.80 elf.bin> <output elf.bin>`
+fan_block_v4.bin is proprietary firmware content and must NOT be committed.
+Users produce it from a genuine 2.77 ELF download, then build with that block.
+
+1. Obtain a genuine 2.77 ELF (`extracted 2.77 elf.bin`) — from the HP license
+   plate or a 2.77 firmware extraction.
+2. `python3 relocate_fan_v4.py <extracted 2.77 elf.bin> fan_block_v4.bin`
+   -- only needs to be re-run if the closure or target address changes.
+3. `python3 build_patched_280.py <extracted 2.80 elf.bin> fan_block_v4.bin <output elf.bin>`
    -- applies sig-bypass + the v4 fan-restore patch.
-3. Apply `patches/280/patch_bootloader.json` and `patch_kernel.json` to the
+4. Apply `patches/280/patch_bootloader.json` and `patch_kernel.json` to the
    extracted `bootloader.bin`/`kernel_main.bin` (simple fixed-byte patches).
-4. `ilo4_repack.py <genuine 2.80 firmware.bin> firmware.map <patched elf.bin> <patched kernel_main.bin> <patched bootloader.bin>`
+5. `ilo4_repack.py <genuine 2.80 firmware.bin> firmware.map <patched elf.bin> <patched kernel_main.bin> <patched bootloader.bin>`
    -- needs Python 2; this session ran it via `docker run --rm -v ... python:2.7`.
+
+The `tools/package_build.sh --mode v4` wrapper automates steps 3–5:
+
+    python3 patches/280-fan-restore-v4/relocate_fan_v4.py <2.77_elf> fan_block_v4.bin
+    ./tools/package_build.sh --mode v4 ilo4_280_fan_v4 fan_block_v4.bin
 
 Result hash (`firmware.bin.backdoored.toflash`), this build:
 `f033cd582b6ac5563ec50ef8c4fa528240e25c4a` (SHA1).

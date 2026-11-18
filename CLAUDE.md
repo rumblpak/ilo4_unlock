@@ -9,6 +9,14 @@ runs the patch script, repacks via the vendored Python-2-only
 `ilo4_repack.py` inside Docker, and verifies the result with a full
 compression round-trip.
 
+V4 support: `tools/package_build.sh --mode v4 <output_name> <fan_block_v4.bin> [extract_dir]`
+runs `build_patched_280.py` which embeds the user-provided `fan_block_v4.bin`
+into the 2.80 ELF. Users must produce `fan_block_v4.bin` themselves from a
+genuine 2.77 ELF via `relocate_fan_v4.py` -- it is proprietary firmware and
+must NOT be committed. The ELF sig-bypass at `0x964dfc` is handled internally
+by `build_patched_280.py`; the bootloader sig-bypass at `0x38bc` is still
+applied by the pipeline.
+
 **Keep this script current whenever the underlying process changes** --
 in particular:
 - A new firmware release/version being targeted (new sig-bypass offsets,
